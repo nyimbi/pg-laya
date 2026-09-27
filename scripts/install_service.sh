@@ -10,10 +10,11 @@
 # The service runs `python3 -m laya.serve` (the [serve] extra of the PyPI `laya` package) on
 # LAYA_HOST:LAYA_PORT (default 127.0.0.1:8000) — where the extension's default laya.api_url points.
 # LAYA_API_KEY (optional) turns on bearer auth on the server; the extension then needs the same key
-# (laya.api_key GUC or LAYA_API_KEY in the server process environment).
+# (laya.api_key GUC or LAYA_API_KEY in the server process environment). LAYA_MODELS / LAYA_THREADS /
+# LAYA_DEVICE (all optional) are passed through to the server when set.
 #
 #   make install NO_SERVE=1                     # skip the service entirely
-#   LAYA_HOST=... LAYA_PORT=... LAYA_API_KEY=... make install-serve
+#   LAYA_HOST=... LAYA_PORT=... LAYA_API_KEY=... LAYA_MODELS=english make install-serve
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -68,6 +69,9 @@ if [ "$have_systemd" = 1 ]; then
     echo "LAYA_PORT=$port"
     echo "LAYA_PRELOAD=1"
     [ -n "$key" ] && echo "LAYA_API_KEY=$key"
+    [ -n "${LAYA_MODELS:-}" ] && echo "LAYA_MODELS=$LAYA_MODELS"
+    [ -n "${LAYA_THREADS:-}" ] && echo "LAYA_THREADS=$LAYA_THREADS"
+    [ -n "${LAYA_DEVICE:-}" ] && echo "LAYA_DEVICE=$LAYA_DEVICE"
     echo "LAYA_LOG_LEVEL=info"
   } > "$envf"
   sed "s|__PYTHON3__|$python|" scripts/laya.conf > "$unitf"
@@ -82,8 +86,14 @@ if [ "$have_systemd" = 1 ]; then
 elif [ "$have_launchd" = 1 ]; then
   mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
   plist="$HOME/Library/LaunchAgents/laya.serve.plist"
-  keyline=""
-  [ -n "$key" ] && keyline="    <key>LAYA_API_KEY</key><string>$key</string>"
+  optlines=""
+  add_kv() { optlines="${optlines}    <key>$1</key><string>$2</string>
+"; }
+  [ -n "$key" ] && add_kv LAYA_API_KEY "$key"
+  [ -n "${LAYA_MODELS:-}" ] && add_kv LAYA_MODELS "$LAYA_MODELS"
+  [ -n "${LAYA_THREADS:-}" ] && add_kv LAYA_THREADS "$LAYA_THREADS"
+  [ -n "${LAYA_DEVICE:-}" ] && add_kv LAYA_DEVICE "$LAYA_DEVICE"
+  optlines="${optlines%$'\n'}"
   cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -102,7 +112,7 @@ elif [ "$have_launchd" = 1 ]; then
     <key>LAYA_HOST</key><string>$host</string>
     <key>LAYA_PORT</key><string>$port</string>
     <key>LAYA_PRELOAD</key><string>1</string>
-$keyline
+$optlines
     <key>LAYA_LOG_LEVEL</key><string>info</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -122,4 +132,9 @@ else
   echo "  The extension files are installed; start the Laya server by hand when you need it:  make serve"
 fi
 
-echo "laya: done. The extension's default laya.api_url (http://$host:$port/v1/systemone) points at this server."
+if [ "$port" = "8000" ]; then
+  echo "laya: done. The extension's default laya.api_url (http://$host:8000/v1/systemone) points at this server."
+else
+  echo "laya: done. The server listens on http://$host:$port/v1/systemone — that is not the extension's"
+  echo "  default port, so point the extension at it:  SET laya.api_url = 'http://$host:$port/v1/systemone';"
+fi

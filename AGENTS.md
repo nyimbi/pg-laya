@@ -68,10 +68,13 @@ There is no linter. `.editorconfig` applies (4-space indent, tabs in the Makefil
   the companion Laya server (`python3 -m laya.serve`, the PyPI `laya[serve]` package) as a systemd unit on Linux
   or a launchd agent on macOS, starts it and polls `http://127.0.0.1:8000/health`. `make install` runs it as a
   prerequisite of the PGXS install; `NO_SERVE=1` skips it (containers, CI).
-- `test/mock_api.py` — the fake API. Its rules decide expected output: `noul` → 0.9 if the *last word* of the
-  condition appears in the row JSON else 0.1; `score`/`choice` → index = `len(row_json) % n`; a condition
+- `test/mock_api.py` — the fake API. Its rules decide expected output: `noul` → 0.9 if the *last word* of
+  the condition appears in the row JSON else 0.1; `score`/`choice` → index = `len(row_json) % n`; a condition
   containing `trigger422` returns HTTP 422; auth requires `Bearer test-key` (requests without an Authorization
-  header get 401 — the no-key path, since the extension only sends a key when one is configured).
+  header get 401 — the no-key path, since the extension only sends a key when one is configured). It accepts
+  both request shapes: the `jev` state `{"condition", "rows"}` and `native` (state is the row itself, the noul
+  condition is parsed out of the question's instructions) — `laya.state_mode = 'native'` forces one row per
+  request regardless of `laya.batch_size`.
 
 ### How one statement runs (the part that needs several files to understand)
 
@@ -86,7 +89,9 @@ There is no linter. `.editorconfig` applies (4-space indent, tabs in the Makefil
    (`build_question`, `request_body`), sent from a per-session `ThreadPoolExecutor` over pooled keep-alive
    `http.client` connections (`borrow_conn`/`release_conn`, retries honour `Retry-After`). Up to
    2 × `laya.concurrency` requests are in flight; `answer()` waits on the row's future in 250 ms slices so
-   `statement_timeout`/cancel work.
+   `statement_timeout`/cancel work. `laya.state_mode = 'native'` (for the local Laya model, which smears
+   answers across rows in a shared state) sends the row itself as `state` with the condition in the question,
+   one row per request — `laya.batch_size` is forced to 1 by `load_cfg`.
 5. Rows the executor never asks for (filtered by cheaper predicates, or cut off by `LIMIT`) are kept in
    `skipped`/`skipped_map` (bounded by `laya.max_prefetch_rows`) and batched with neighbours if requested later.
 6. All state lives in PL/Python `GD["laya"]` for the backend session: cache, jobs, stats, prepared plans, thread

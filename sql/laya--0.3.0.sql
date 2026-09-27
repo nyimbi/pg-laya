@@ -32,6 +32,12 @@
 --                            in the foreground). The cloud Jev model speaks the same /v1/systemone protocol:
 --                            set to 'https://api.typesafe.ai/v1/systemone' to use it, as do proxies and mocks.
 --                            The local server runs one inference at a time, so keep laya.concurrency low (2-4).
+--   laya.state_mode         default 'jev' 'jev' = the shared-state format: one request carries
+--                            laya.batch_size rows as state {"condition", "rows"} (the cloud Jev model,
+--                            which locates rows[i] by position). 'native' = one row per request, state is
+--                            the row itself and the condition goes in the question — the format the local
+--                            Laya model is trained on (it cannot reliably separate rows in a shared state,
+--                            and laya.batch_size is ignored in this mode). Use 'native' with the local server.
 --   laya.timeout            default 30    seconds per API request
 --   laya.keepalive          default 600   seconds a pooled API connection may sit idle before it is reconnected
 --   laya.max_rows_per_statement   default 0 (off)  never send more rows than this to the API in one statement
@@ -52,7 +58,7 @@ from urllib.parse import urlsplit
 
 USD_PER_INPUT_TOKEN = 0.042 / 1_000_000  # laya-1.13 list price; output tokens are free
 PAGE_ROWS = 1000                          # rows read from the table per SPI query
-STATE_VERSION = 2
+STATE_VERSION = 3
 
 # ---------------------------------------------------------------- session state (survives across calls)
 if GD.get("laya", {}).get("version") != STATE_VERSION:
@@ -83,7 +89,7 @@ CFG_SQL = """SELECT statement_timestamp()::text AS ts,
   current_setting('laya.batch_size', true) AS batch_size, current_setting('laya.concurrency', true) AS concurrency,
   current_setting('laya.max_prefetch_rows', true) AS max_prefetch_rows, current_setting('laya.notices', true) AS notices,
   current_setting('laya.api_url', true) AS api_url, current_setting('laya.timeout', true) AS timeout,
-  current_setting('laya.keepalive', true) AS keepalive,
+  current_setting('laya.keepalive', true) AS keepalive, current_setting('laya.state_mode', true) AS state_mode,
   current_setting('laya.max_rows_per_statement', true) AS max_rows, current_setting('laya.max_chars_per_statement', true) AS max_chars"""
 
 def load_cfg():
@@ -95,10 +101,15 @@ def load_cfg():
     # A key is optional: the default local Laya server runs unauthenticated, and the Authorization
     # header is only sent when a key is configured.
     url = urlsplit(g("api_url", "http://127.0.0.1:8000/v1/systemone"))
+    mode = g("state_mode", "jev")
+    if mode not in ("jev", "native"):
+        plpy.error("laya: laya.state_mode must be 'jev' or 'native'")
+    batch = max(1, int(g("batch_size", "20")))
     return {
         "ts": r["ts"], "api_key": key, "model": g("model", "laya-latest"),
-        "batch_size": max(1, int(g("batch_size", "20"))), "concurrency": max(1, int(g("concurrency", "16"))),
-        "max_prefetch": max(1, int(g("max_prefetch_rows", "5000"))),
+        # native mode serves one row per request, so laya.batch_size is ignored there
+        "batch_size": 1 if mode == "native" else batch, "concurrency": max(1, int(g("concurrency", "16"))),
+        "state_mode": mode, "max_prefetch": max(1, int(g("max_prefetch_rows", "5000"))),
         "notices": g("notices", "on").lower() in ("on", "true", "1", "yes"),
         "timeout": float(g("timeout", "30")), "keepalive": float(g("keepalive", "600")),
         "max_rows": int(g("max_rows", "0")), "max_chars": int(g("max_chars", "0")),
@@ -109,7 +120,18 @@ def load_cfg():
 # ---------------------------------------------------------------- question builders
 opts = json.loads(options) if options else None
 
-def build_question(i):
+def build_question(i, native):
+    if native:
+        # One record per request: the state is the row itself, so the question refers to "this
+        # record" and carries the condition — the shape the local Laya model is trained on.
+        if kind == "noul":
+            return {"type": "noul", "instructions": "Does this record satisfy the condition '%s'?" % query}
+        if kind == "score":
+            return {"type": "score", "instructions": "Rate this record: %s" % query, "criteria": opts}
+        if kind == "choice":
+            return {"type": "choice", "instructions": "For this record: %s" % query,
+                    "criteria": {o: None for o in opts}}
+        raise RuntimeError("laya: unknown kind %r" % kind)
     ref = "rows[%d]" % i
     if kind == "noul":
         return {"type": "noul",
@@ -122,9 +144,10 @@ def build_question(i):
     raise RuntimeError("laya: unknown kind %r" % kind)
 
 def request_body(cfg, rows):
-    state = {"condition": query, "rows": rows} if kind == "noul" else {"rows": rows}
+    native = cfg["state_mode"] == "native"
+    state = rows[0] if native else ({"condition": query, "rows": rows} if kind == "noul" else {"rows": rows})
     return json.dumps({"model": cfg["model"], "state": state,
-                       "questions": {("r%d" % i): build_question(i) for i in range(len(rows))}}).encode()
+                       "questions": {("r%d" % i): build_question(i, native) for i in range(len(rows))}}).encode()
 
 # ---------------------------------------------------------------- HTTP: persistent connections, retries (threads: no plpy here)
 def conn_key(cfg):

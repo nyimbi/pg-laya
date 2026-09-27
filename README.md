@@ -51,6 +51,10 @@ joins, `GROUP BY`, `LIMIT`, `ORDER BY laya_prob(...)`.
    (`{"condition": ..., "rows": [...]}`) with one yes/no [Noul](https://docs.typesafe.ai/primitives/noul)
    question per row. Laya evaluates all questions over one state in a single forward pass, which amortises
    the ~270-token request overhead (about 435 tokens for one row alone vs 175 per row in batches of 20).
+   That is the default `jev` state format — what the cloud Jev model was built for. With the local server,
+   `SET laya.state_mode = 'native'` instead sends the row itself as the state with the condition in the
+   question, one row per request: the shape the local model is trained on (it cannot reliably separate
+   rows in a shared state, so `laya.batch_size` is ignored in this mode).
 3. Up to 2 × `laya.concurrency` requests are in flight over persistent HTTPS connections, and every row is answered
    as soon as its batch returns, so a `LIMIT` stops the read-ahead after the in-flight window, and rows that cheaper
    predicates filter out before `laya()` runs (`WHERE age > 60 AND laya(...)`) are skipped rather than judged.
@@ -67,7 +71,10 @@ inference time instead of network round trips.
 
 ### Why 20 rows per request
 
-The model has to find `rows[i]` by position in the array, and that gets unreliable in long arrays. Against
+This is about the cloud Jev model in the default `jev` state format. The local Laya model is the
+opposite case: it judges one record per request and smears answers across rows in a shared state,
+so use `laya.state_mode = 'native'` with it (one row per request). For Jev, the model has to find
+`rows[i]` by position in the array, and that gets unreliable in long arrays. Against
 ground truth from structured columns (job title, EU membership, a phrase in a free-text field; 400 rows
 each), batches of 1–20 rows were 100 % correct, batches of 40 were 92–98 % and batches of 80 were 77–94 %.
 Wider rows (1,000 characters) made no difference at 20. Naming rows instead of indexing them did not help.
@@ -101,7 +108,20 @@ curl -fsS http://127.0.0.1:8000/health               # health probe
 ```
 
 The service preloads the model checkpoints at boot (`LAYA_PRELOAD=1`) so the first `laya()` isn't paying
-model load. To query the cloud [TypeSafe Jev](https://docs.typesafe.ai) model instead,
+model load. Querying it works out of the box; for best accuracy use the state format the local model was
+trained on — one row per request, the row as the state, the condition in the question:
+
+```sql
+SET laya.state_mode = 'native';   -- per session (or ALTER ROLE ... SET); default is 'jev'
+```
+
+The local model cannot reliably separate rows in a shared state, so in `native` mode every row is sent as
+its own request and `laya.batch_size` is ignored. Measured on this shape with the real model: a
+"customer is angry" split came out 0.95/0.72 vs 0.00/0.00, and "the country is in Europe" 0.82 for
+Germany vs 0.05 for the USA — the same queries through the default `jev` format score everything
+around 0.8 regardless of content.
+
+To query the cloud [TypeSafe Jev](https://docs.typesafe.ai) model instead,
 `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';` and set a TypeSafe API key (see below).
 
 ### With an AI agent (easiest)
@@ -195,7 +215,8 @@ All settings are plain GUCs: `SET laya.<name> = ...`, `ALTER ROLE ... SET`, `ALT
 | `laya.api_key` | env `LAYA_API_KEY` (optional) | API key for the endpoint. Not needed for the default local server (no `LAYA_API_KEY`); needed when the server enables auth or when using the cloud Jev model |
 | `laya.model` | `laya-latest` | Model name or pinned version such as `laya-1.13.0` |
 | `laya.threshold` | `0.5` | Probability at which `laya()` returns true |
-| `laya.batch_size` | `20` | Rows per API request. Accuracy drops measurably above ~20–25 (see above) |
+| `laya.batch_size` | `20` | Rows per API request. Accuracy drops measurably above ~20–25 (see above); ignored in `native` state mode (always 1) |
+| `laya.state_mode` | `jev` | Request state format. `jev` = shared state with `rows[]`, `laya.batch_size` rows per request (the cloud Jev model). `native` = one row per request, state is the row itself with the condition in the question — the format the local Laya model is trained on |
 | `laya.concurrency` | `16` | Parallel API requests; up to twice that many are queued ahead of the executor. Keep this low (2-4) when using a local server: it runs one inference at a time, so more connections just queue or get HTTP 503 |
 | `laya.max_prefetch_rows` | `5000` | How far past a cache miss the read-ahead scans to find the requested row, and how many skipped rows it keeps for later requests (memory bound) |
 | `laya.notices` | `on` | Emit a progress `NOTICE` per finished request and a summary per table with request count, tokens, estimated cost and time |

@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`laya.state_mode` — a `native` request format for the local Laya model.** The default `jev` mode packs
+  `laya.batch_size` rows into one shared state (`{"condition", "rows"}`) — what the cloud Jev model is built
+  for. The local model cannot reliably separate rows in a shared state (in a 4-row batch, rows with and
+  without the target phrase all scored ≈0.8), so `native` sends one row per request: the row itself as the
+  state, the condition in the question — the shape it was trained on. `laya.batch_size` is ignored in `native`
+  mode (always 1). Measured against the real model, one row per request: "the customer is angry" 0.95/0.72 vs
+  0.00/0.00; "the country is in Europe" 0.82 (Germany) vs 0.05 (USA); "the name is European" 0.67–0.89 for
+  Pierre/Anna vs 0.07 for the rest — the same queries through the `jev` format score everything ≈0.8 or drift
+  by batch position. `SET laya.state_mode = 'native';` (per session, role or database) to use it.
 - **`make install` also installs the companion Laya server as a system service on the Postgres machine.** It
   installs the `laya[serve]` Python package and starts the server on `http://127.0.0.1:8000` — where the
   extension's default `laya.api_url` points — as a systemd unit (`laya.service`) on Linux or a launchd agent

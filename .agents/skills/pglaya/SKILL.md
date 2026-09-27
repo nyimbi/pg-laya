@@ -96,11 +96,16 @@ Rules that make the difference between a good query and an expensive, wrong one:
 - **Call it on a base table or a view, not on a subquery/CTE.** Tables and views are streamed ahead and batched
   20 rows per request; an anonymous `record` from a CTE is judged one request per row. To limit which columns the
   model sees (privacy, tokens), create a view with just those columns and call `laya(view_alias, …)`.
+- **Against the local Laya server, `SET laya.state_mode = 'native';`** The local model cannot reliably separate
+  rows in a shared state (batches smear answers). `native` sends one row per request — the row as the state, the
+  condition in the question — the format it was trained on; the default `jev` mode (shared state, `laya.batch_size`
+  rows per request) is for the cloud Jev model.
 - **Look at the distribution before freezing a threshold.** Suggest `laya_prob()` + `width_bucket` or
   `ORDER BY p DESC LIMIT 20` first; ambiguous rows really land near 0.5. Re-running with another threshold is free
   because answers are cached per session.
 - **Say what it will cost.** Every row reaching `laya()` goes to the model; ~175 input tokens per row in
-  batches of 20. Against the cloud Jev model that is $0.042 per million input tokens (≈ $0.012 for 2,000
+  batches of 20 (`jev` state mode; the local server's `native` mode sends one row per request). Against the
+  cloud Jev model that is $0.042 per million input tokens (≈ $0.012 for 2,000
   rows); against the local server it is CPU time — the server runs one inference at a time, so keep
   `laya.concurrency` at 2-4. On a large table propose an indexed pre-filter and, for shared servers,
   `SET laya.max_rows_per_statement = N` as a spend guard. With the default local server row contents stay
@@ -141,7 +146,7 @@ flight, keep-alive connections, per-session cache), measured numbers and why 20 
 | `laya: this statement would send N rows to the API, above laya.max_rows_per_statement = M` | Spend guard fired. Add a pre-filter or raise the guard on purpose. |
 | Query is slow, one request per row in the `NOTICE`s | `laya()` is called on a CTE/subquery (`record`). Move it onto the base table or a view. |
 | Nothing matches | Look at `laya_prob()`; reword the condition literally; lower the threshold. |
-| Results differ from single-row checks | `laya.batch_size` was raised above ~20; the model locates `rows[i]` by position and accuracy drops. Set it back. |
+| Results differ from single-row checks | Against the local server: the default `jev` state mode batches rows into one shared state, which the local model smears — `SET laya.state_mode = 'native'`. Against the cloud: `laya.batch_size` was raised above ~20; the model locates `rows[i]` by position and accuracy drops. Set it back. |
 | `statement_timeout` or Ctrl-C seems ignored | Fixed in 0.2.0 (waits are interruptible within 250 ms). `SELECT laya_version()`; upgrade with `ALTER EXTENSION laya UPDATE`. |
 
 `SELECT laya_stats();` shows requests, tokens, estimated cost, cache hits, errors, retries, in-flight requests and

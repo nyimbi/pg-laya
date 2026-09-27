@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """Deterministic stand-in for the /v1/systemone endpoint (Laya's local server or the cloud Jev model),
-used by the regression tests.
+used by the regression tests. Accepts both request shapes:
+  jev     state = {"condition": ..., "rows": [...]}   shared state, one question per row
+  native  state = the row itself                      one row per request, the noul condition
+                                                      is carried in the question's instructions
 
 Rules (so expected output is stable):
-  noul   -> 0.9 if the LAST word of `state.condition` appears (case-insensitively) in the row JSON, else 0.1
+  noul   -> 0.9 if the LAST word of the condition appears (case-insensitively) in the row JSON, else 0.1
   score  -> level index = length of the row JSON modulo number of levels (one-hot probabilities)
   choice -> option index  = length of the row JSON modulo number of options
   A condition containing "trigger422" returns HTTP 422 (non-retryable error path).
   usage.input_tokens = len(request body) // 4
 Run: python3 test/mock_api.py [port]   (default 8765)
 """
-import json, sys
+import json, re, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+_NATIVE_COND = re.compile(r"condition '(.*)'\?")   # phrasing build_question uses in native mode
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"   # keep-alive, so the extension's connection reuse is exercised
@@ -25,8 +30,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "invalid api key"})
         req = json.loads(body)
         state, questions = req["state"], req["questions"]
-        rows = state.get("rows", [])
-        cond = state.get("condition", "")
+        if isinstance(state, dict) and "rows" in state:
+            rows = state["rows"]
+            cond = state.get("condition", "")
+        else:   # native: state is the single row; a noul condition sits in the first question
+            rows = [state]
+            m = _NATIVE_COND.search(next(iter(questions.values()))["instructions"])
+            cond = m.group(1) if m else ""
         if "trigger422" in cond:
             return self._send(422, {"error": "mock validation failure"})
         needle = cond.split()[-1].lower() if cond.split() else ""
