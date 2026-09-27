@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Deterministic stand-in for https://api.typesafe.ai/v1/systemone, used by the regression tests.
+"""Deterministic stand-in for the /v1/systemone endpoint (Laya's local server or the cloud Jev model),
+used by the regression tests.
 
 Rules (so expected output is stable):
   noul   -> 0.9 if the LAST word of `state.condition` appears (case-insensitively) in the row JSON, else 0.1

@@ -24,7 +24,7 @@ SELECT * FROM reviews WHERE laya(reviews, 'the customer sounds frustrated', 0.8)
 
 ### `laya_prob(row, condition text) → float8`
 
-Probability 0..1 that the row satisfies the condition (a TypeSafe *noul* question over
+Probability 0..1 that the row satisfies the condition (a *noul* question over
 `{"condition": …, "rows": […]}`). Use for ranking, distributions and choosing a threshold. Calibrated: ambiguous
 rows sit near 0.5.
 

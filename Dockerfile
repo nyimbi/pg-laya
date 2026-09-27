@@ -1,6 +1,8 @@
 # postgres:<PG_MAJOR> with PL/Python and the laya extension installed.
+# The container runs no service manager, so the companion Laya server is not started in it:
+# run it in another container or on the host and `SET laya.api_url` (see README, Docker).
 #   docker build -t pg-laya .
-#   docker run -e POSTGRES_PASSWORD=pw -e TYPESAFE_API_KEY=... -p 5432:5432 pg-laya
+#   docker run -e POSTGRES_PASSWORD=pw -p 5432:5432 pg-laya
 #   psql ... -c "CREATE EXTENSION laya CASCADE"
 ARG PG_MAJOR=16
 FROM postgres:${PG_MAJOR}

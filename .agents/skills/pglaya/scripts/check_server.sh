@@ -27,6 +27,14 @@ laya_avail=$(q "$@" -c "SELECT coalesce(max(default_version), '') FROM pg_availa
 laya_inst=$(q "$@" -c "SELECT coalesce(max(extversion), '') FROM pg_extension WHERE extname = 'laya'")
 key_guc=$(q "$@" -c "SELECT CASE WHEN coalesce(current_setting('laya.api_key', true), '') <> '' THEN 'set' ELSE '' END")
 
+# Is the local Laya server reachable? (the extension's default laya.api_url is http://127.0.0.1:8000/v1/systemone)
+if (exec 3<>"/dev/tcp/127.0.0.1/8000") 2>/dev/null; then
+  exec 3>&- 3<&- 2>/dev/null || true
+  ok "local Laya server reachable on 127.0.0.1:8000 (the default laya.api_url)"
+else
+  warn "no local Laya server on 127.0.0.1:8000; 'make install' normally starts one (systemd 'laya' / launchd com.pglaya.serve), or run 'make serve', or point laya.api_url elsewhere"
+fi
+
 blockers=0
 ok()   { printf '  [ok]   %s\n' "$1"; }
 warn() { printf '  [warn] %s\n' "$1"; }
@@ -57,7 +65,7 @@ else
 fi
 
 if [ "$key_guc" = "set" ]; then ok "laya.api_key is set for this session/role/database"
-else warn "laya.api_key is not set in the GUC; the server falls back to TYPESAFE_API_KEY in *its* environment (cannot be checked from SQL). Set it with SET laya.api_key = '...' or ALTER ROLE ... SET laya.api_key = '...' if the first query fails with 'laya: no API key'."; fi
+else echo "  [info] laya.api_key is not set; fine while the Laya server runs without LAYA_API_KEY (the default). If the server (or a cloud endpoint) requires a key: SET laya.api_key = '...' or ALTER ROLE ... SET laya.api_key = '...'"; fi
 
 echo
 if [ "$blockers" -eq 0 ]; then echo "Verdict: this server can run pglaya."; exit 0

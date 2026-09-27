@@ -35,7 +35,7 @@ binary: PGXN plus a Docker image covers nearly everyone.
 5. **Docker.** `docker build -t ghcr.io/realzachi/pg-laya:X.Y.Z-pg16 --build-arg PG_MAJOR=16 .` for each supported
    major, push, and add `latest`.
 6. **Announce.** pgsql-announce@lists.postgresql.org (moderated, extensions welcome), the PostgreSQL
-   Slack/Discord `#extensions`, and the TypeSafe community.
+   Slack/Discord `#extensions`, and the Laya community (https://github.com/NandhaKishorM/laya).
 
 ## What a good extension repo has
 

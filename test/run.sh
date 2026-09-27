@@ -8,6 +8,7 @@ export PGDATA="${PGDATA:-/tmp/pg-laya-data}"
 export PGPORT="${PGPORT:-5499}"
 export PGHOST=/tmp
 export PGUSER="${PGUSER:-$(whoami)}"
+unset LAYA_API_KEY
 unset TYPESAFE_API_KEY
 
 if [ ! -f "$PGDATA/PG_VERSION" ]; then "$PGBIN/initdb" -D "$PGDATA" -U "$PGUSER" --auth=trust >/dev/null; fi

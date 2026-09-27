@@ -17,8 +17,9 @@
 -- for the session, so re-running a query, changing the threshold or sorting by probability is free.
 --
 -- Settings (SET laya.<name> = ...):
---   laya.api_key            API key for the endpoint (falls back to TYPESAFE_API_KEY). Optional if the
---                            endpoint needs no auth.
+--   laya.api_key            API key for the endpoint (falls back to LAYA_API_KEY in the server environment;
+--                            TYPESAFE_API_KEY is still honoured as a deprecated alias). Optional: endpoints
+--                            without authentication need no key, which is the default local Laya server.
 --   laya.model              default 'laya-latest'
 --   laya.threshold          default 0.5   probability at which laya() returns true
 --   laya.batch_size         default 20    rows per API request (accuracy drops measurably above ~20-25 rows)
@@ -26,18 +27,18 @@
 --   laya.max_prefetch_rows  default 5000  how far past a cache miss the read-ahead scans to find the row, and
 --                                        how many skipped rows it keeps for later (memory bound)
 --   laya.notices            default 'on'  emit progress NOTICEs and a summary per table read-ahead
---   laya.api_url            default 'http://127.0.0.1:8000/v1/systemone' (Laya's local server; set to
---                            'https://api.typesafe.ai/v1/systemone' for the cloud Jev model). The Laya
---                            server speaks the same /v1/systemone protocol, so switching endpoints needs no
---                            code change. Set laya.concurrency low (2-4): the server runs one inference at a time.
---                            (proxies, mocks, tests)
+--   laya.api_url            default 'http://127.0.0.1:8000/v1/systemone' — Laya's local server, which
+--                            `make install` installs as a system service on this machine (or run `make serve`
+--                            in the foreground). The cloud Jev model speaks the same /v1/systemone protocol:
+--                            set to 'https://api.typesafe.ai/v1/systemone' to use it, as do proxies and mocks.
+--                            The local server runs one inference at a time, so keep laya.concurrency low (2-4).
 --   laya.timeout            default 30    seconds per API request
 --   laya.keepalive          default 600   seconds a pooled API connection may sit idle before it is reconnected
 --   laya.max_rows_per_statement   default 0 (off)  never send more rows than this to the API in one statement
 --   laya.max_chars_per_statement  default 0 (off)  never send more characters of row data than this in one statement
 --                                                 Both are spend guards for shared or public deployments.
 
-\echo Use "ALTER EXTENSION laya UPDATE" to upgrade to 0.3.0. \\quit
+\echo Use "ALTER EXTENSION laya UPDATE" to upgrade to 0.3.0. \quit
 
 CREATE OR REPLACE FUNCTION _laya_eval(rel_type text, row_json text, query text, kind text, options text)
 RETURNS jsonb
@@ -90,9 +91,9 @@ def load_cfg():
     def g(name, default):
         v = r[name]
         return default if v in (None, "") else v
-    key = g("api_key", None) or os.environ.get("TYPESAFE_API_KEY")
-    if not key:
-        plpy.error("laya: no API key. SET laya.api_key = '...' or start the server with TYPESAFE_API_KEY set.")
+    key = g("api_key", None) or os.environ.get("LAYA_API_KEY") or os.environ.get("TYPESAFE_API_KEY")
+    # A key is optional: the default local Laya server runs unauthenticated, and the Authorization
+    # header is only sent when a key is configured.
     url = urlsplit(g("api_url", "http://127.0.0.1:8000/v1/systemone"))
     return {
         "ts": r["ts"], "api_key": key, "model": g("model", "laya-latest"),
@@ -195,8 +196,9 @@ def retry_after_seconds(resp):
 
 def call_api(cfg, rows):
     body = request_body(cfg, rows)
-    headers = {"Authorization": "Bearer " + cfg["api_key"], "Content-Type": "application/json",
-               "User-Agent": "pg-laya/0.3.0"
+    headers = {"Content-Type": "application/json", "User-Agent": "pg-laya/0.3.0"}
+    if cfg["api_key"]:
+        headers["Authorization"] = "Bearer " + cfg["api_key"]
     delay, last = 0.5, None
     for attempt in range(7):
         c, reused = borrow_conn(cfg)

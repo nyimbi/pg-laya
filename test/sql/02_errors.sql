@@ -4,7 +4,8 @@ SET laya.notices = off;
 CREATE TABLE things (id int, v text);
 INSERT INTO things VALUES (1, 'a');
 
--- No key configured anywhere
+-- No key configured anywhere: the extension sends no Authorization header, and the
+-- mock (which requires one) rejects it — the same failure a keyless call gets elsewhere
 SET laya.api_key = '';
 SELECT laya(things, 'anything') FROM things;
 

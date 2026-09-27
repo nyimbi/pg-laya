@@ -1,8 +1,9 @@
 # PGXS build for the laya extension (PL/Python only, nothing to compile).
 #
-#   make install                # copies control + SQL into the server's extension dir
-#   make install-serve          # install the systemd unit for the Laya companion server
-#   make serve                  # run Laya locally (pip installs the [serve] extra, starts it)
+#   make install                # copy control + SQL into the server's extension dir, and install the
+#                               # companion Laya server as a system service on this machine (NO_SERVE=1 skips)
+#   make install-serve          # (re)install just the companion server's service (systemd on Linux, launchd on macOS)
+#   make serve                  # run the Laya server in the foreground (pip installs the [serve] extra first)
 #   make installcheck           # pg_regress against a running server (needs test/mock_api.py, see README)
 #   make docker-test            # full test run inside a throwaway container
 #   make dist                   # zip for PGXN
@@ -19,13 +20,16 @@ include $(PGXS)
 
 PG_MAJOR ?= 16
 
-.PHONY: dist docker-test serve install-serve
+.PHONY: install-serve serve dist docker-test
+
+# The prerequisite installs the companion Laya server as a system service on this machine
+# (scripts/install_service.sh: systemd on Linux, launchd on macOS, a printed note in containers and
+# CI where there is no service manager). The PGXS recipe then copies the extension files.
+# NO_SERVE=1 skips the service — containers, CI, or a deployment where the Laya server runs elsewhere.
+install: install-serve
+
 install-serve:
-	install -d /etc/systemd/system /etc/laya
-	install -m 0644 scripts/laya.conf /etc/systemd/system/laya.service
-	echo '# set LAYA_API_KEY here; chmod 600 /etc/laya/env' > /etc/laya/env
-	systemctl daemon-reload
-	systemctl enable --now laya.service
+	@[ "$(NO_SERVE)" = "1" ] && { echo "laya: skipping companion server install (NO_SERVE=1)"; exit 0; } || bash scripts/install_service.sh
 
 serve:
 	@pip install "laya[serve]" || true

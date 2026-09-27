@@ -1,7 +1,8 @@
 -- pglaya smoke test: one call per function on a five-row temp table, then session stats.
 --   psql -d mydb -f smoke_test.sql
--- Needs the extension created and an API key (SET laya.api_key / TYPESAFE_API_KEY on the server).
--- Sends 5 small rows to the API once (a few hundred tokens, well under a cent). Nothing is left behind.
+-- Needs the extension created and the Laya server running (make install installs it as a service;
+-- 'make serve' runs it in the foreground). No API key is needed by default.
+-- Sends 5 small rows to the model once (a few hundred tokens). Nothing is left behind.
 \set ON_ERROR_STOP on
 \set QUIET on
 \pset footer off

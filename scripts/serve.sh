@@ -5,13 +5,13 @@
 # protocol, so the extension needs no code change to switch from api.typesafe.ai here.
 #
 #   make serve               # one-shot on this host
-#   LAYA_API_KEY=secret make serve   # require bearer auth (matches laya.api_key)
-#   make install-serve       # install the systemd unit and start it
+#   LAYA_API_KEY=secret make serve   # require bearer auth (set the same key in laya.api_key)
+#   make install-serve       # install the service (systemd on Linux, launchd on macOS) and start it
 #
 # Configuration is read from the environment (see scripts/laya.conf for the unit). Defaults:
 #   LAYA_HOST=127.0.0.1  LAYA_PORT=8000  LAYA_PRELOAD=1
 #
-# NOTE: `pip install "laya[serve]"` must have been run on this host (Makefile `install-serve`).
+# NOTE: `pip install "laya[serve]"` must have been run on this host (make install / make serve do it).
 
 set -euo pipefail
 

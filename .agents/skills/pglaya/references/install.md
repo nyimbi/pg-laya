@@ -11,8 +11,8 @@ https://pglaya.com/docs/getting-started/quick-start.md
 | PostgreSQL 14, 15, 16 or 17 | tested majors (CI runs all four) | `SHOW server_version;` |
 | `plpython3u` available | the extension is one PL/Python function | `SELECT * FROM pg_available_extensions WHERE name = 'plpython3u';` |
 | superuser | `plpython3u` is an untrusted language; only superusers may `CREATE EXTENSION laya` | `SELECT rolsuper FROM pg_roles WHERE rolname = current_user;` |
-| outbound HTTPS from the **server** to `api.typesafe.ai:443` | the database process makes the API calls | firewall / egress rules |
-| a TypeSafe API key | https://console.typesafe.ai | — |
+| Python ≥ 3.10 with `pip` on the Postgres machine | the companion Laya server (`pip` package `laya[serve]`) runs there; `make install` installs it as a system service | `python3 --version` |
+| no API key, by default | the local server runs unauthenticated; a key is only needed if you enable `LAYA_API_KEY` or use the cloud Jev model | — |
 
 `scripts/check_server.sh` runs the SQL checks and prints a verdict. It accepts the same connection arguments as
 `psql` (`-h`, `-p`, `-U`, `-d`, or a URI) and honours `PGHOST`/`PGUSER`/`PGDATABASE`/`PGPASSWORD`.
@@ -59,8 +59,11 @@ distribution is not found, the release is not on PGXN yet: fall back to source.
 ## Install from source (PGXS)
 
 There is nothing to compile: `make install` copies `laya.control` and `sql/laya--*.sql` into the extension
-directory of the Postgres that `pg_config` points at. You need `make` and `pg_config` (package
-`postgresql-server-dev-NN` on Debian/Ubuntu, `postgresqlNN-devel` on RHEL; included in Postgres.app/EDB/Homebrew).
+directory of the Postgres that `pg_config` points at, **and installs the companion Laya server as a system
+service on that machine** (systemd on Linux, launchd on macOS; `NO_SERVE=1` skips the service — containers,
+CI, or when the server runs elsewhere). You need `make` and `pg_config` (package
+`postgresql-server-dev-NN` on Debian/Ubuntu, `postgresqlNN-devel` on RHEL; included in Postgres.app/EDB/Homebrew),
+plus Python ≥ 3.10 with `pip` for the service part.
 
 ```bash
 git clone https://github.com/realZachi/pg-laya.git && cd pg-laya
@@ -105,25 +108,35 @@ For trying it out, or when the host Postgres cannot take `plpython3u`:
 git clone https://github.com/realZachi/pg-laya.git && cd pg-laya
 docker build -t pg-laya .                          # postgres:16 + plpython3u + laya files
 docker build --build-arg PG_MAJOR=17 -t pg-laya .  # another major
-docker run -d --name pg-laya -p 5432:5432 -e POSTGRES_PASSWORD=pw -e TYPESAFE_API_KEY=your-key pg-laya
+docker run -d --name pg-laya -p 5432:5432 -e POSTGRES_PASSWORD=pw pg-laya
 psql postgres://postgres:pw@localhost/postgres -c "CREATE EXTENSION laya CASCADE"
 ```
 
-The image does not create the extension automatically. To have it created on first start, mount an init script:
+The image does not create the extension automatically, and it runs no service manager — so the companion
+Laya server is not in the container. Run it elsewhere and point the extension at it
+(`SET laya.api_url = 'http://<server-host>:8000/v1/systemone';`), or use the cloud Jev model. To have the
+extension created on first start, mount an init script:
 `echo 'CREATE EXTENSION laya CASCADE;' > init.sql` and add `-v $PWD/init.sql:/docker-entrypoint-initdb.d/laya.sql`.
 
-## API key placement
+## API key (optional)
 
-`laya.api_key` is read on every cache miss with this precedence: GUC (`SET`, role, database, `postgresql.conf`)
-→ `TYPESAFE_API_KEY` in the environment of the **postgres server process**. The client's shell environment is
-irrelevant.
+No key is needed by default: the local Laya server runs unauthenticated, and the extension only sends an
+`Authorization` header when a key is configured. If the server was started with `LAYA_API_KEY` (in
+`/etc/laya/env` on Linux or the launchd plist on macOS), the extension must carry the same token.
+
+`laya.api_key` is read on every cache miss with this precedence: GUC (`SET`, role, database,
+`postgresql.conf`) → `LAYA_API_KEY` in the environment of the **postgres server process**
+(`TYPESAFE_API_KEY` is still honoured as a deprecated fallback). The client's shell environment is irrelevant.
 
 | Scope | How | Use when |
 | --- | --- | --- |
 | this session | `SET laya.api_key = '...';` | trying it out, notebooks |
 | one role, persistent | `ALTER ROLE analyst SET laya.api_key = '...';` | per-team keys, shared server |
 | one database | `ALTER DATABASE app SET laya.api_key = '...';` | one key per app |
-| whole server | `TYPESAFE_API_KEY` in the service environment (systemd `Environment=`, Docker `-e`) | single-tenant server |
+| whole server | `LAYA_API_KEY` in the service environment (systemd `Environment=`, Docker `-e`) | single-tenant server |
+
+For the cloud Jev model the key is a TypeSafe key (https://console.typesafe.ai), set the same way, together
+with `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`.
 
 Role/database settings are visible to that role via `SHOW laya.api_key`; keep keys out of committed SQL files and
 dashboards. `scripts/smoke_test.sql` never prints the key.
@@ -148,11 +161,12 @@ row with `requests ≥ 1` and `errors = 0`.
 | `pgxn: command not found` | pgxnclient not installed | `pip install pgxnclient` (or the distro package), or use the source path |
 | `pgxn install laya` → distribution not found / no release | not on PGXN (yet), or a typo in the pin | check https://pgxn.org/dist/laya/; install from source |
 | `permission denied to create extension "laya"` / `must be superuser` | not a superuser | connect as one (`postgres`) or ask the DBA |
-| `laya: no API key. SET laya.api_key = '...' or start the server with TYPESAFE_API_KEY set.` | no GUC and no server env | see API key placement; `TYPESAFE_API_KEY` in your shell is not the server's |
-| `laya: TypeSafe API error 401 {...}` | invalid key | check the key in console.typesafe.ai |
-| `laya: TypeSafe API error 422 {...}` | request rejected (bad model name, malformed options) | check `laya.model`, options arrays |
-| `laya: TypeSafe API error 429/5xx` after retries | rate limit / outage; the extension retries with `Retry-After` | lower `laya.concurrency`, retry later |
-| connection errors / timeouts, `laya.timeout` reached | server cannot reach `api.typesafe.ai:443` | egress firewall, proxy (`laya.api_url` can point at a proxy) |
+| `laya: API unreachable after retries: … Connection refused` (against 127.0.0.1:8000) | the local Laya server is not running | `systemctl status laya` (Linux) / `launchctl list \| grep com.pglaya.serve` (macOS); or `make serve` in the foreground; `make install` normally starts it |
+| `laya: API error 401 {...}` | endpoint requires a bearer token that was not sent or is wrong | set `laya.api_key` to the server's `LAYA_API_KEY` (or the TypeSafe key for the cloud model) |
+| `laya: API error 422 {...}` | request rejected (bad model name, malformed options) | check `laya.model`, options arrays |
+| `laya: API error 413 {...}` | batch over the local server's limits (64 questions / 50k chars state / 2 MB body) | lower `laya.batch_size`, or a view with fewer, narrower columns |
+| `laya: API error 429/5xx` after retries | cloud rate limit / outage; the extension retries with `Retry-After` | lower `laya.concurrency`, retry later |
+| connection errors / timeouts against a cloud `laya.api_url` | server cannot reach `api.typesafe.ai:443` | egress firewall, proxy (`laya.api_url` can point at a proxy) |
 | `laya: this statement would send N rows … above laya.max_rows_per_statement` | spend guard | pre-filter in SQL, or raise the guard deliberately |
 | `NOTICE`s show one request per row | `laya()` on a CTE/subquery (`record`) | call it on the base table or a view |
 | `CREATE EXTENSION` works but functions are missing in another database | extensions are per database | `CREATE EXTENSION laya CASCADE` there too |

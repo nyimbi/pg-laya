@@ -3,10 +3,11 @@ SET laya.api_url = 'http://127.0.0.1:8765/v1/systemone';
 SET laya.notices = off;
 CREATE TABLE things (id int, v text);
 INSERT INTO things VALUES (1, 'a');
--- No key configured anywhere
+-- No key configured anywhere: the extension sends no Authorization header, and the
+-- mock (which requires one) rejects it — the same failure a keyless call gets elsewhere
 SET laya.api_key = '';
 SELECT laya(things, 'anything') FROM things;
-ERROR:  plpy.Error: laya: no API key. SET laya.api_key = '...' or start the server with TYPESAFE_API_KEY set.
+ERROR:  plpy.Error: laya: API error 401 {"error": "invalid api key"}
 -- Non-retryable HTTP errors surface as SQL errors
 SET laya.api_key = 'wrong-key';
 SELECT laya(things, 'anything') FROM things;
@@ -21,7 +22,7 @@ ERROR:  plpy.Error: laya: unknown kind 'bogus'
 SELECT (laya_stats()->>'errors')::int AS errors;
  errors 
 --------
-      2
+      3
 (1 row)
 
 SELECT laya(things, 'the value is a') FROM things;

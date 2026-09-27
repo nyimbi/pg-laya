@@ -1,14 +1,18 @@
 ---
 name: pglaya
-description: Install, configure, query and explain pglaya (the `laya` PostgreSQL extension that filters, ranks and classifies rows with plain-language conditions via TypeSafe's Jev model). Use this skill whenever a user mentions pglaya, pg-laya, the laya extension, `laya()`, `laya_prob`, `laya_choice`, `laya_score`, a "natural-language WHERE clause", "ask my Postgres table a question", classifying or scoring rows with AI inside Postgres, or hits an error starting with `laya:`. Covers "install pglaya on my server / in Docker", "write a query that picks rows where …", "what can laya do", cost and performance questions, and troubleshooting, with scripts that check the server, install the extension and run a smoke test.
+description: Install, configure, query and explain pglaya (the `laya` PostgreSQL extension that filters, ranks and classifies rows with plain-language conditions via Laya, a local System-1 decision model — or the cloud TypeSafe Jev model over the same protocol). Use this skill whenever a user mentions pglaya, pg-laya, the laya extension, `laya()`, `laya_prob`, `laya_choice`, `laya_score`, a "natural-language WHERE clause", "ask my Postgres table a question", classifying or scoring rows with AI inside Postgres, or hits an error starting with `laya:`. Covers "install pglaya on my server / in Docker", "write a query that picks rows where …", "what can laya do", cost and performance questions, and troubleshooting, with scripts that check the server, install the extension and run a smoke test.
 ---
 
 # pglaya — plain-language predicates for PostgreSQL
 
-`laya(table, 'condition')` is an ordinary boolean SQL function. Every row is sent to TypeSafe's Jev model
-(a "System One" model that returns calibrated probabilities, not text) and judged against the condition.
-No index, no embeddings, no vector column. The sibling functions return a probability (`laya_prob`), a class
-(`laya_choice`), a rubric score (`laya_score`) or the raw answer (`laya_eval`).
+`laya(table, 'condition')` is an ordinary boolean SQL function. Every row is judged by
+[Laya](https://github.com/NandhaKishorM/laya), a local, non-autoregressive "System One" model that returns
+calibrated probabilities, not text — by default by a companion server on the same machine
+(`http://127.0.0.1:8000/v1/systemone`, installed by `make install` as a system service). The cloud
+[TypeSafe Jev](https://docs.typesafe.ai) model speaks the same `/v1/systemone` protocol and can be selected
+with `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`. No index, no embeddings, no vector column.
+The sibling functions return a probability (`laya_prob`), a class (`laya_choice`), a rubric score (`laya_score`)
+or the raw answer (`laya_eval`).
 
 ```sql
 SELECT * FROM tickets WHERE status = 'open' AND laya(tickets, 'the customer threatens to cancel');
@@ -37,9 +41,11 @@ run on Supabase, Neon, RDS/Aurora or other managed hosts that withhold superuser
 user this early rather than after a failed build. Docker is the way to try it without touching a host.
 
 1. Check the target server: `bash scripts/check_server.sh [psql connection args]`. It reports the version,
-   whether `plpython3u` is available, whether you are superuser, whether `laya` is already installed and whether
-   an API key is configured, then prints a verdict.
-2. Install the extension files (nothing to compile; PGXS just copies `laya.control` + SQL). Pick one:
+   whether `plpython3u` is available, whether you are superuser, whether `laya` is already installed, whether
+   the local Laya server is reachable, and whether a key is configured, then prints a verdict.
+2. Install the extension files (nothing to compile; PGXS just copies `laya.control` + SQL). **`make install`
+   also installs the companion Laya server as a system service on that machine** (systemd on Linux, launchd on
+   macOS; `NO_SERVE=1` skips it — e.g. when the server runs elsewhere). Pick one:
    - From PGXN (preferred when `pgxn` is available or `pip install pgxnclient` is acceptable; no clone to manage):
      `bash scripts/install.sh --pgxn [--pg-config /path/to/pg_config] [--db mydb]`, which runs
      `pgxn install laya` (pinned with `--ref X.Y.Z`) and then `CREATE EXTENSION IF NOT EXISTS laya CASCADE`.
@@ -48,15 +54,14 @@ user this early rather than after a failed build. Docker is the way to try it wi
      into a temp dir (or uses `--source DIR` / the current checkout), runs `make install`, then
      `CREATE EXTENSION IF NOT EXISTS laya CASCADE` in `--db`. Pass `--no-create` to stop after `make install`.
    - Docker: `docker build -t pg-laya .` in a clone, then `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pw
-     -e TYPESAFE_API_KEY=... pg-laya` and `CREATE EXTENSION laya CASCADE` against it. `--build-arg PG_MAJOR=17` for
-     another major.
-3. Configure the API key. The default backend is the local Laya server, which needs no key; the cloud
-   [TypeSafe Jev](https://docs.typesafe.ai) model does (get one from https://console.typesafe.ai) — set
-   `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';` to use it. Three options for the key, pick
-   what fits the deployment: `SET laya.api_key = '...'` (session), `ALTER ROLE analyst SET laya.api_key = '...'
-   ` (persistent per role), or `TYPESAFE_API_KEY` in the environment of the **server** process (not the
-   psql client). Never paste a user's real key into files you commit; put it in a role setting or the
-   server environment. To run the local server: `make serve` or `make install-serve` (see README).
+     pg-laya` and `CREATE EXTENSION laya CASCADE` against it. The container runs no service manager, so the
+     Laya server must run outside it: `SET laya.api_url = 'http://<server-host>:8000/v1/systemone';` (or a
+     cloud endpoint). `--build-arg PG_MAJOR=17` for another major.
+3. The API key is optional: the default local Laya server runs unauthenticated, so nothing to do. If the
+   server was started with `LAYA_API_KEY`, give the extension the same token (`SET laya.api_key = '...'` for
+   the session, `ALTER ROLE analyst SET laya.api_key = '...'` persistent). To use the cloud
+   [TypeSafe Jev](https://docs.typesafe.ai) model instead: get a key from https://console.typesafe.ai, set it
+   as in the previous sentence, and `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`.
 4. Verify: `psql -d mydb -f scripts/smoke_test.sql`. It creates a temp table, runs each function once, and
    prints `laya_stats()` so the user sees requests, tokens and estimated cost.
 
@@ -94,10 +99,13 @@ Rules that make the difference between a good query and an expensive, wrong one:
 - **Look at the distribution before freezing a threshold.** Suggest `laya_prob()` + `width_bucket` or
   `ORDER BY p DESC LIMIT 20` first; ambiguous rows really land near 0.5. Re-running with another threshold is free
   because answers are cached per session.
-- **Say what it will cost.** Every row reaching `laya()` goes to the API; ~175 input tokens per row in batches of 20,
-  $0.042 per million input tokens (≈ $0.012 for 2,000 rows). On a large table propose an indexed pre-filter and,
-  for shared servers, `SET laya.max_rows_per_statement = N` as a spend guard. Row contents leave the database, so
-  ask before running it on data that may not be shared.
+- **Say what it will cost.** Every row reaching `laya()` goes to the model; ~175 input tokens per row in
+  batches of 20. Against the cloud Jev model that is $0.042 per million input tokens (≈ $0.012 for 2,000
+  rows); against the local server it is CPU time — the server runs one inference at a time, so keep
+  `laya.concurrency` at 2-4. On a large table propose an indexed pre-filter and, for shared servers,
+  `SET laya.max_rows_per_statement = N` as a spend guard. With the default local server row contents stay
+  on the machine; with the cloud endpoint they leave the database, so ask before running it on data that
+  may not be shared.
 
 Worked examples for filter, rank, classify, score, joins, views, GROUP BY and thresholds are in
 `references/query-patterns.md`. Read it when the request is more than a one-liner.
@@ -110,7 +118,8 @@ things people most often get wrong:
 
 1. It is a **full scan by design**: no index, every row that reaches `laya()` is judged (then cached per session).
 2. It needs **self-hosted Postgres with `plpython3u` and superuser**: no Supabase/Neon/RDS.
-3. **Data leaves Postgres** to TypeSafe's API.
+3. **Data stays on the machine by default** (the companion Laya server runs next to Postgres). It leaves
+   Postgres only if `laya.api_url` is pointed at the cloud Jev endpoint.
 
 Then link https://pglaya.com/docs. For the pipeline (streaming read-ahead, batches of 20, 2 × concurrency in
 flight, keep-alive connections, per-session cache), measured numbers and why 20 rows per request, read
@@ -120,8 +129,11 @@ flight, keep-alive connections, per-session cache), measured numbers and why 20 
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `laya: no API key. SET laya.api_key = '...' or start the server with TYPESAFE_API_KEY set.` | Key not set for this session/role, and the **server** process has no `TYPESAFE_API_KEY`. Setting it in the client shell does nothing. |
-| `laya: TypeSafe API error 401 …` | Wrong key. |
+| `laya: API unreachable after retries: … Connection refused` / timeouts against `127.0.0.1:8000` | The local Laya server is not running. Linux: `systemctl status laya`; macOS: `launchctl list \| grep com.pglaya.serve`; or run `make serve` in the foreground. `make install` normally starts it automatically. |
+| `laya: API error 401 …` | The endpoint requires a bearer token that the extension did not send (or sent the wrong one). Set `laya.api_key` to the server's `LAYA_API_KEY` (or the TypeSafe key for the cloud model). |
+| `laya: API error 422 …` | Request rejected by the model (bad model name, malformed options, or the mock's `trigger422` condition in tests). Check `laya.model`, options arrays. |
+| `laya: API error 413 …` | A batch exceeded the local server's limits (64 questions, 50,000 chars of state, 2 MB body). Lower `laya.batch_size`, or use a view with fewer/narrower columns. |
+| `laya: API error 429/5xx` after retries (cloud) | Rate limit / outage; the extension retries with `Retry-After`. Lower `laya.concurrency`, retry later |
 | `ERROR: could not open extension control file … laya.control` | `make install` copied into a different Postgres than the one you connect to. Use `make install PG_CONFIG=/path/to/that/pg_config`. |
 | `ERROR: could not open extension control file … plpython3u.control` / `language "plpython3u" does not exist` | Install `postgresql-plpython3-NN` (Debian/Ubuntu) or a build that ships it; managed hosts cannot. |
 | `required extension "plpython3u" is not installed` | `CREATE EXTENSION laya` without `CASCADE`. Use `CREATE EXTENSION laya CASCADE;`. |
@@ -137,10 +149,10 @@ pooled connections for the session and is the first thing to look at.
 
 ## Files in this skill
 
-- `scripts/check_server.sh` — preflight: version, `plpython3u`, superuser, laya installed, key configured.
+- `scripts/check_server.sh` — preflight: version, `plpython3u`, superuser, laya installed, local server reachable, key.
 - `scripts/install.sh` — `pgxn install laya` (`--pgxn`) or clone + `make install`, then `CREATE EXTENSION … CASCADE`.
 - `scripts/smoke_test.sql` — one call per function on a temp table, then `laya_stats()`.
-- `references/install.md` — requirements, PGXN/source/Docker details, API key placement, troubleshooting.
+- `references/install.md` — requirements, PGXN/source/Docker details, API key (optional), troubleshooting.
 - `references/functions.md` — every function, argument, return type, the `laya_eval` jsonb shape.
 - `references/settings.md` — every GUC with default and when to change it.
 - `references/query-patterns.md` — worked SQL for filter, rank, classify, score, views, joins, thresholds, spend.

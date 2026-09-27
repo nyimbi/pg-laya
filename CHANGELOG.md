@@ -6,14 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **`make install` also installs the companion Laya server as a system service on the Postgres machine.** It
+  installs the `laya[serve]` Python package and starts the server on `http://127.0.0.1:8000` — where the
+  extension's default `laya.api_url` points — as a systemd unit (`laya.service`) on Linux or a launchd agent
+  (`com.pglaya.serve`) on macOS, and polls `http://127.0.0.1:8000/health`. `make install-serve` re-runs just
+  this part; `NO_SERVE=1` skips it (containers and CI have no service manager, so it prints how to start the
+  server by hand instead).
+
 ### Changed
 - **Default backend is now Laya (local), pluggable to the cloud Jev model.** The default `laya.api_url`
   is `http://127.0.0.1:8000/v1/systemone` (Laya's local server, the drop-in replacement for
   `api.typesafe.ai/v1/systemone`) instead of the cloud TypeSafe Jev model. Laya speaks the same
-  `/v1/systemone` wire protocol, so the request/response and auth paths are unchanged. To use the cloud
-  model again, `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`. Laya runs one inference at a
-  time, so keep `laya.concurrency` low (2-4); more connections just queue (or get HTTP 503). Installing
-  the companion server is `make install-serve` (see README). See [how to move back](#moving-back-to-the-cloud-laya-model).
+  `/v1/systemone` wire protocol, so the request/response paths are unchanged. To use the cloud model again,
+  `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`. Laya runs one inference at a time, so keep
+  `laya.concurrency` low (2-4); more connections just queue (or get HTTP 503).
+- **The API key is optional.** The extension only sends an `Authorization` header when a key is configured,
+  so the default local server (no `LAYA_API_KEY`) works with zero configuration. The server-side environment
+  variable is `LAYA_API_KEY`; `TYPESAFE_API_KEY` is still honoured as a deprecated fallback. The old
+  `laya: no API key …` error is gone: a keyless request to an endpoint that requires one now surfaces the
+  endpoint's 401.
+
+### Fixed
+- A Python syntax error (missing brace) in the 0.2.0 → 0.3.0 upgrade script, which would have aborted
+  `ALTER EXTENSION laya UPDATE` from 0.2.0.
 
 ## [0.2.0] - 2026-09-18
 

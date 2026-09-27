@@ -3,8 +3,10 @@
 Guidance for AI coding agents (Claude Code, Codex, Cursor, Copilot, …) working in this repository.
 
 `laya` is a PostgreSQL extension that adds plain-language predicates (`WHERE laya(people, 'the name is European')`).
-Every row is judged by TypeSafe's Jev model over HTTPS. The whole extension is **one PL/Python function plus SQL
-wrappers**; there is nothing to compile.
+Every row is judged by Laya, a local, non-autoregressive System-1 model, over the `/v1/systemone` protocol — by
+default `http://127.0.0.1:8000`, a companion server that `make install` installs as a system service on the
+Postgres machine; the cloud TypeSafe Jev endpoint is reachable via `laya.api_url` (same wire protocol).
+The whole extension is **one PL/Python function plus SQL wrappers**; there is nothing to compile.
 
 ## Documentation
 
@@ -29,9 +31,13 @@ for working *on* the extension; the skill is for working *with* it.
 ```bash
 make docker-test                  # full regression run in a throwaway container (PG_MAJOR=16 default)
 make docker-test PG_MAJOR=14      # oldest supported major; CI runs 14, 15, 16, 17
-make install                      # copy control + SQL into the server's extension dir (needs pg_config on PATH)
+make install                      # copy control + SQL into the server's extension dir AND install the companion
+                                  # Laya server as a system service on this machine (systemd/launchd; NO_SERVE=1 skips,
+                                  # e.g. in containers — that's what test/Dockerfile and CI rely on)
 make install PG_CONFIG=/path/to/pg_config
-python3 test/mock_api.py &        # deterministic stand-in for the TypeSafe API on 127.0.0.1:8765
+make install-serve                # (re)install just the companion server's service
+make serve                        # run the companion server in the foreground (127.0.0.1:8000)
+python3 test/mock_api.py &        # deterministic stand-in for the /v1/systemone API (Laya or TypeSafe) on 127.0.0.1:8765
 make installcheck                 # pg_regress against a running server; needs mock_api.py running
 bash test/run.sh                  # what CI does: temp cluster (PGPORT=5499) + mock API + make installcheck
 make dist                         # PGXN zip from git HEAD
@@ -42,7 +48,7 @@ output in `test/expected/<name>.out`, failures land in `test/regression.diffs` a
 `01_basic.sql` runs `CREATE EXTENSION laya`, so it must be included, or pass `REGRESS_OPTS="... --load-extension=laya"`.
 
 When a test's output changes intentionally, copy `test/results/<name>.out` over `test/expected/<name>.out` and
-review the diff. Tests **never** call the live API; `test/run.sh` unsets `TYPESAFE_API_KEY`.
+review the diff. Tests **never** call the live API; `test/run.sh` unsets `LAYA_API_KEY`/`TYPESAFE_API_KEY`.
 
 There is no linter. `.editorconfig` applies (4-space indent, tabs in the Makefile, 2 spaces in yml/json/md).
 
@@ -58,9 +64,14 @@ There is no linter. `.editorconfig` applies (4-space indent, tabs in the Makefil
   copy of the full script with the `\echo` guard changed to `ALTER EXTENSION laya UPDATE`.
 - `laya.control` (`default_version`), `META.json` (PGXN), `CHANGELOG.md` — must all agree on the version; CI's
   `lint-meta` job checks `laya.control` == `META.json` and that `sql/laya--<version>.sql` exists.
+- `scripts/install_service.sh` (+ the `scripts/laya.conf` systemd unit template, `scripts/serve.sh`) — installs
+  the companion Laya server (`python3 -m laya.serve`, the PyPI `laya[serve]` package) as a systemd unit on Linux
+  or a launchd agent on macOS, starts it and polls `http://127.0.0.1:8000/health`. `make install` runs it as a
+  prerequisite of the PGXS install; `NO_SERVE=1` skips it (containers, CI).
 - `test/mock_api.py` — the fake API. Its rules decide expected output: `noul` → 0.9 if the *last word* of the
   condition appears in the row JSON else 0.1; `score`/`choice` → index = `len(row_json) % n`; a condition
-  containing `trigger422` returns HTTP 422; auth requires `Bearer test-key`.
+  containing `trigger422` returns HTTP 422; auth requires `Bearer test-key` (requests without an Authorization
+  header get 401 — the no-key path, since the extension only sends a key when one is configured).
 
 ### How one statement runs (the part that needs several files to understand)
 

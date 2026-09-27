@@ -4,8 +4,11 @@ Docs: https://pglaya.com/docs/how-it-works.md, https://pglaya.com/docs/caveats.m
 
 ## The model
 
-Every row is judged by **TypeSafe's Jev** (https://docs.typesafe.ai), a "System One" model: it does not generate
-text, it returns calibrated probabilities for typed questions over a JSON *state*. pglaya uses three question types:
+Every row is judged by **Laya** (https://github.com/NandhaKishorM/laya), a "System One" model: it does not
+generate text, it returns calibrated probabilities for typed questions over a JSON *state*. By default it runs
+in a companion server on the same machine (`http://127.0.0.1:8000/v1/systemone`, installed by `make install`);
+the cloud **TypeSafe Jev** model (https://docs.typesafe.ai) speaks the same `/v1/systemone` protocol and can
+be selected with `laya.api_url`. pglaya uses three question types:
 
 - **noul** (yes/no): `laya`, `laya_prob` → a probability that the row satisfies `condition`.
 - **choice**: `laya_choice` → a probability per option.
@@ -49,7 +52,7 @@ EU membership, a phrase in a free-text field; 400 rows each), batches of 1–20 
 of 20 cost only 4 % more tokens than 40 and are as fast, because request latency barely depends on size. So
 `laya.batch_size` defaults to 20 and should stay there.
 
-## Measured numbers (from Europe, ~190 ms RTT to the API)
+## Measured numbers (cloud Jev API, from Europe, ~190 ms RTT)
 
 | Scenario | Result |
 | --- | --- |
@@ -59,16 +62,18 @@ of 20 cost only 4 % more tokens than 40 and are as fast, because request latency
 | new condition with warm pooled connections | ≈ 2.3 s (the first request on each fresh connection pays 0.9–1.9 s of TLS + server setup, then ≈ 0.3 s each) |
 | version 0.1.0 for comparison | 8.5 s and 338k tokens for the same full query |
 
-Cost formula: `input_tokens × $0.042 / 1M` (laya-1.13 list price; output tokens free). Rule of thumb
-**≈ 175 tokens ≈ $0.0000074 per row**, so 1k rows ≈ $0.007, 100k rows ≈ $0.7. `laya_stats()` reports the running
-total as `estimated_cost_usd`; the per-table `NOTICE` reports it per statement.
+Cost formula (cloud Jev model): `input_tokens × $0.042 / 1M` (laya-1.13 list price; output tokens free). Rule
+of thumb **≈ 175 tokens ≈ $0.0000074 per row**, so 1k rows ≈ $0.007, 100k rows ≈ $0.7. `laya_stats()` reports
+the running total as `estimated_cost_usd`; the per-table `NOTICE` reports it per statement. Against the local
+server the same token counts are reported, but the cost is CPU time (one forward pass at a time).
 
 ## Caveats to state plainly
 
 - **Full scan by design.** No index can answer a plain-language condition; every row that reaches `laya()` is
   judged (once per session). Cut the set in SQL first.
-- **Data leaves Postgres.** Row contents go to TypeSafe's API over HTTPS. Do not use it on data that may not be
-  shared; use a view to send only what is needed.
+- **Data stays local by default.** Row contents go to the companion server on the same machine and nowhere
+  else. They leave Postgres only if `laya.api_url` points at the cloud Jev model — do not use that on data
+  that may not be shared; use a view to send only what is needed.
 - **Untrusted language, superuser install.** `plpython3u` runs with the OS privileges of the server process. Only
   superusers can create the extension; managed hosts (Supabase, Neon, RDS…) cannot run it.
 - **Cache per backend.** Connection pools with many backends each warm their own cache. `laya_cache_clear()`
@@ -80,6 +85,7 @@ total as `estimated_cost_usd`; the per-table `NOTICE` reports it per statement.
 
 | Version | Notes |
 | --- | --- |
+| 0.3.0 | default endpoint is the local Laya server (`make install` also installs it as a system service); API key optional; `LAYA_API_KEY` env |
 | 0.2.0 (2026-09-18) | streaming read-ahead, persistent connections, batch 20, concurrency 16, timeout 30, `laya.keepalive`, spend guards, progress notices, interruptible waits |
 | 0.1.0 | whole-table prefetch up to `max_prefetch_rows`, batch 40, concurrency 6, timeout 90 |
 
