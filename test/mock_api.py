@@ -46,7 +46,7 @@ class Handler(BaseHTTPRequestHandler):
                 answers[qid] = {"type": "choice", "choice": opts[k],
                                 "probabilities": {o: (1.0 if j == k else 0.0) for j, o in enumerate(opts)},
                                 "confidence": 1.0}
-        self._send(200, {"model": "jev-mock", "answers": answers,
+        self._send(200, {"model": "laya-mock", "answers": answers,
                          "usage": {"input_tokens": len(body) // 4, "output_tokens": len(answers)}})
 
     def _send(self, code, obj):

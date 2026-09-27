@@ -8,7 +8,7 @@ Thanks for helping. The extension is a single PL/Python function plus SQL wrappe
 - Every behaviour change needs a regression test in `test/sql/` with matching `test/expected/` output.
   Tests run against `test/mock_api.py`, never the live API, so they are free and deterministic.
 - Keep the SQL API stable. New functions are fine; changing signatures needs a major version and an upgrade script.
-- Changes to the model prompt (the `instructions`/`criteria` built in `_jev_eval`) should come with a note on
+- Changes to the model prompt (the `instructions`/`criteria` built in `_laya_eval`) should come with a note on
   what you measured on real data, because they change results for every user.
 
 ## Workflow
@@ -24,10 +24,10 @@ and review the diff.
 
 ## Versioning an SQL change
 
-1. Bump `default_version` in `jev.control` and add a new `sql/jev--<new>.sql` (full install script).
-2. Add an upgrade script `sql/jev--<old>--<new>.sql` so `ALTER EXTENSION jev UPDATE` works. Every object in
+1. Bump `default_version` in `laya.control` and add a new `sql/laya--<new>.sql` (full install script).
+2. Add an upgrade script `sql/laya--<old>--<new>.sql` so `ALTER EXTENSION laya UPDATE` works. Every object in
    the main script is `CREATE OR REPLACE`, so the upgrade script is a copy of it with the `\echo` guard adjusted.
-3. Update `META.json`, `CHANGELOG.md` and the version returned by `jev_version()`.
+3. Update `META.json`, `CHANGELOG.md` and the version returned by `laya_version()`.
 
 ## Code of conduct
 

@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PGBIN="$(pg_config --bindir)"
-export PGDATA="${PGDATA:-/tmp/pg-jev-data}"
+export PGDATA="${PGDATA:-/tmp/pg-laya-data}"
 export PGPORT="${PGPORT:-5499}"
 export PGHOST=/tmp
 export PGUSER="${PGUSER:-$(whoami)}"
@@ -17,7 +17,7 @@ trap '"$PGBIN/pg_ctl" -D "$PGDATA" -m fast stop >/dev/null; kill $MOCK 2>/dev/nu
 sleep 1
 
 if make installcheck; then
-  echo "jev: all regression tests passed"
+  echo "laya: all regression tests passed"
 else
-  echo "jev: regression tests FAILED"; cat test/regression.diffs 2>/dev/null || true; exit 1
+  echo "laya: regression tests FAILED"; cat test/regression.diffs 2>/dev/null || true; exit 1
 fi

@@ -1,18 +1,18 @@
 {
-  "name": "jev",
-  "abstract": "Ask your Postgres tables questions in plain language: filter, rank and classify rows with TypeSafe's Jev model",
-  "description": "jev(table, 'condition') judges every row of a table with TypeSafe's System One model and returns a boolean, a probability, a rubric score or a class. The table is streamed in physical order and judged in small parallel API requests over persistent connections; answers are cached per session. No index required.",
-  "version": "0.2.0",
+  "name": "laya",
+  "abstract": "Ask your Postgres tables questions in plain language: filter, rank and classify rows with Laya's local System-1 model",
+  "description": "laya(table, 'condition') judges every row of a table with Laya's local System-1 model (default) or the cloud Jev model and returns a boolean, a probability, a rubric score or a class. The table is streamed in physical order and judged in small parallel API requests over persistent connections; answers are cached per session. No index required.",
+  "version": "0.3.0",
   "maintainer": [
     "Zachi <me@zachi.dev>"
   ],
   "license": "postgresql",
   "provides": {
-    "jev": {
+    "laya": {
       "abstract": "Plain-language predicates for PostgreSQL",
-      "file": "sql/jev--0.2.0.sql",
+      "file": "sql/laya--0.3.0.sql",
       "docfile": "README.md",
-      "version": "0.2.0"
+      "version": "0.3.0"
     }
   },
   "prereqs": {
@@ -24,13 +24,13 @@
     }
   },
   "resources": {
-    "homepage": "https://github.com/realZachi/pg-jev",
+    "homepage": "https://github.com/realZachi/pg-laya",
     "bugtracker": {
-      "web": "https://github.com/realZachi/pg-jev/issues"
+      "web": "https://github.com/realZachi/pg-laya/issues"
     },
     "repository": {
-      "url": "https://github.com/realZachi/pg-jev.git",
-      "web": "https://github.com/realZachi/pg-jev",
+      "url": "https://github.com/realZachi/pg-laya.git",
+      "web": "https://github.com/realZachi/pg-laya",
       "type": "git"
     }
   },

@@ -1,0 +1,6 @@
+# laya — ask your Postgres tables questions in plain language, powered by Laya
+comment = 'Natural-language WHERE clauses without indexes, powered by Laya (System One)'
+default_version = '0.3.0'
+relocatable = false
+schema = public
+requires = 'plpython3u'
