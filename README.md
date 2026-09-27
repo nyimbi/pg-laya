@@ -104,11 +104,19 @@ Useful knobs (all optional):
 make serve                        # run it in the foreground instead (127.0.0.1:8000, preloads checkpoints)
 LAYA_HOST=0.0.0.0 LAYA_PORT=9000 make install-serve   # re-install the service with different host/port
 LAYA_API_KEY=secret make install-serve                # require bearer auth (set the same key in laya.api_key)
+LAYA_MODELS=english make install-serve                # preload only the english checkpoint (421 MB)
+LAYA_THREADS=4 LAYA_DEVICE=cpu make install-serve     # inference threads / device, passed to the server
+LAYA_PYTHON=/path/to/python3.11 make install-serve    # which interpreter runs the service
 curl -fsS http://127.0.0.1:8000/health               # health probe
 ```
 
 The service preloads the model checkpoints at boot (`LAYA_PRELOAD=1`) so the first `laya()` isn't paying
-model load. Querying it works out of the box; for best accuracy use the state format the local model was
+model load. On its very first start it also downloads the checkpoints from Hugging Face into the local
+cache (the `english` checkpoint is ~421 MB), so the installer polls `/health` for up to 5 minutes and a
+slow first start is normal; afterwards boot takes seconds. Without `LAYA_MODELS` every bundled checkpoint
+is available, the others loading lazily on first use.
+
+Querying it works out of the box; for best accuracy use the state format the local model was
 trained on — one row per request, the row as the state, the condition in the question:
 
 ```sql
@@ -119,7 +127,27 @@ The local model cannot reliably separate rows in a shared state, so in `native` 
 its own request and `laya.batch_size` is ignored. Measured on this shape with the real model: a
 "customer is angry" split came out 0.95/0.72 vs 0.00/0.00, and "the country is in Europe" 0.82 for
 Germany vs 0.05 for the USA — the same queries through the default `jev` format score everything
-around 0.8 regardless of content.
+around 0.8 regardless of content. A 24-example probe with the same shape scored 10/10 on
+"the customer is angry" (ten labelled support tickets), 8/8 routing eight tickets to
+billing/sales/technical, and 7/12 on "the name is European" — strong on tone and intent, weaker at
+inferring nationalities from names.
+
+#### Operating the service
+
+| | Linux (systemd) | macOS (launchd) |
+| --- | --- | --- |
+| Status | `systemctl status laya` | `launchctl list \| grep com.pglaya.serve` |
+| Logs | `journalctl -u laya -f` | `tail -f ~/Library/Logs/laya.serve.err.log` |
+| Restart | `sudo systemctl restart laya` | `launchctl kickstart -k gui/$(id -u)/com.pglaya.serve` |
+| Stop | `sudo systemctl disable --now laya` | `launchctl bootout gui/$(id -u)/com.pglaya.serve` |
+| Remove | also `rm /etc/systemd/system/laya.service /etc/laya/env` | also `rm ~/Library/LaunchAgents/laya.serve.plist` |
+| Config | `/etc/laya/env` (host, port, key, models, …) | `~/Library/LaunchAgents/laya.serve.plist` |
+
+Or just re-run `make install-serve` with the changed environment: it replaces the unit/plist and restarts
+the service. If port 8000 is already taken by something else, install on another port —
+`LAYA_PORT=8001 make install-serve` — and point the extension at it
+(`SET laya.api_url = 'http://127.0.0.1:8001/v1/systemone';`); the installer prints that reminder whenever
+the port is not the default.
 
 To query the cloud [TypeSafe Jev](https://docs.typesafe.ai) model instead,
 `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';` and set a TypeSafe API key (see below).
@@ -225,6 +253,20 @@ All settings are plain GUCs: `SET laya.<name> = ...`, `ALTER ROLE ... SET`, `ALT
 | `laya.keepalive` | `600` | Seconds a pooled API connection may sit idle before it is reconnected. The first request on a fresh connection costs a TLS handshake plus, measured, up to 1.5 s of server-side setup, so keep connections alive across queries; TCP keepalive probes catch silently dropped ones |
 | `laya.max_rows_per_statement` | `0` (off) | Abort a statement that would send more rows than this to the API. Spend guard for shared deployments |
 | `laya.max_chars_per_statement` | `0` (off) | Same, for characters of row data |
+
+### Recommended baselines
+
+```sql
+-- with the default local Laya server: the format the model is trained on, one inference at a time
+ALTER DATABASE app SET laya.state_mode = 'native';
+ALTER DATABASE app SET laya.concurrency = 4;
+-- with the cloud Jev model (defaults shown for completeness)
+-- ALTER DATABASE app SET laya.state_mode = 'jev';
+-- ALTER DATABASE app SET laya.batch_size = 20;
+-- spend guards on a shared server
+ALTER DATABASE app SET laya.max_rows_per_statement = 5000;
+ALTER DATABASE app SET laya.max_chars_per_statement = 2000000;
+```
 
 ## Writing good conditions
 

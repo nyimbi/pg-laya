@@ -31,6 +31,18 @@ Settings are read once per cache miss (one SPI query), so changing one takes eff
 | `laya.max_rows_per_statement` | `0` (off) | abort a statement that would send more rows than this to the API | shared servers, ad-hoc users, anything where a missing `WHERE` would be expensive |
 | `laya.max_chars_per_statement` | `0` (off) | same, for characters of row data | wide rows / token budget |
 
+## Recommended baseline for the local server
+
+```sql
+ALTER DATABASE app SET laya.state_mode = 'native';   -- the format the local model is trained on
+ALTER DATABASE app SET laya.concurrency = 4;         -- it runs one inference at a time
+ALTER DATABASE app SET laya.max_rows_per_statement = 5000;   -- spend guard
+ALTER DATABASE app SET laya.max_chars_per_statement = 2000000;
+```
+
+If the server was installed on a non-default port, `ALTER DATABASE app SET laya.api_url =
+'http://127.0.0.1:<port>/v1/systemone';` as well.
+
 ## Recommended baseline for a shared server
 
 ```sql

@@ -141,6 +141,36 @@ with `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`.
 Role/database settings are visible to that role via `SHOW laya.api_key`; keep keys out of committed SQL files and
 dashboards. `scripts/smoke_test.sql` never prints the key.
 
+## Operating the local Laya server
+
+`make install` (or `make install-serve`) installs the server as a service: a systemd unit `laya` on Linux,
+a launchd agent `com.pglaya.serve` on macOS. First start downloads the model checkpoints from Hugging Face
+(~421 MB for `english`); the installer polls `http://127.0.0.1:8000/health` for up to 5 minutes, so a slow
+first start is normal — afterwards boot takes seconds.
+
+| Task | Linux (systemd) | macOS (launchd) |
+| --- | --- | --- |
+| Status | `systemctl status laya` | `launchctl list \| grep com.pglaya.serve` |
+| Logs | `journalctl -u laya -f` | `tail -f ~/Library/Logs/laya.serve.err.log` |
+| Restart | `sudo systemctl restart laya` | `launchctl kickstart -k gui/$(id -u)/com.pglaya.serve` |
+| Stop | `sudo systemctl disable --now laya` | `launchctl bootout gui/$(id -u)/com.pglaya.serve` |
+| Remove | also `rm /etc/systemd/system/laya.service /etc/laya/env` | also `rm ~/Library/LaunchAgents/laya.serve.plist` |
+| Config | `/etc/laya/env` | `~/Library/LaunchAgents/laya.serve.plist` |
+
+Server environment (set at install time, passed through to the service): `LAYA_HOST` (127.0.0.1),
+`LAYA_PORT` (8000), `LAYA_API_KEY` (off), `LAYA_MODELS` (preload a specific checkpoint, e.g. `english`),
+`LAYA_THREADS`, `LAYA_DEVICE`, `LAYA_PYTHON` (which interpreter). Re-run
+`LAYA_...=... make install-serve` to change any of them. If 8000 is taken, install on another port and
+point the extension at it: `SET laya.api_url = 'http://127.0.0.1:8001/v1/systemone';` (the installer
+prints this reminder when the port is not 8000).
+
+Against the local server, set the state format the model was trained on and keep concurrency low:
+
+```sql
+ALTER DATABASE app SET laya.state_mode = 'native';   -- one row per request (see settings.md)
+ALTER DATABASE app SET laya.concurrency = 4;         -- the server runs one inference at a time
+```
+
 ## Verify
 
 ```bash

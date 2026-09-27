@@ -66,8 +66,12 @@ There is no linter. `.editorconfig` applies (4-space indent, tabs in the Makefil
   `lint-meta` job checks `laya.control` == `META.json` and that `sql/laya--<version>.sql` exists.
 - `scripts/install_service.sh` (+ the `scripts/laya.conf` systemd unit template, `scripts/serve.sh`) — installs
   the companion Laya server (`python3 -m laya.serve`, the PyPI `laya[serve]` package) as a systemd unit on Linux
-  or a launchd agent on macOS, starts it and polls `http://127.0.0.1:8000/health`. `make install` runs it as a
-  prerequisite of the PGXS install; `NO_SERVE=1` skips it (containers, CI).
+  or a launchd agent on macOS, starts it and polls `http://127.0.0.1:8000/health`. Service config:
+  `/etc/laya/env` + `/etc/systemd/system/laya.service` (Linux; logs via `journalctl -u laya`) or
+  `~/Library/LaunchAgents/laya.serve.plist` (macOS; logs in `~/Library/Logs/laya.serve.*.log`). `LAYA_MODELS` /
+  `LAYA_THREADS` / `LAYA_DEVICE` / `LAYA_PYTHON` are passed through when set; a non-default `LAYA_PORT` makes the
+  installer print the `laya.api_url` the extension needs. `make install` runs it as a prerequisite of the PGXS
+  install; `NO_SERVE=1` skips it (containers, CI).
 - `test/mock_api.py` — the fake API. Its rules decide expected output: `noul` → 0.9 if the *last word* of
   the condition appears in the row JSON else 0.1; `score`/`choice` → index = `len(row_json) % n`; a condition
   containing `trigger422` returns HTTP 422; auth requires `Bearer test-key` (requests without an Authorization
