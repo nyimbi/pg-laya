@@ -130,7 +130,9 @@ Germany vs 0.05 for the USA — the same queries through the default `jev` forma
 around 0.8 regardless of content. A 24-example probe with the same shape scored 10/10 on
 "the customer is angry" (ten labelled support tickets), 8/8 routing eight tickets to
 billing/sales/technical, and 7/12 on "the name is European" — strong on tone and intent, weaker at
-inferring nationalities from names.
+inferring nationalities from names. The server's router picks the multilingual checkpoint
+automatically per request; on the same tasks it scored 6/8 on anger (the two misses at 0.37–0.47),
+5/6 on department routing and 2/4 on name nationality — treat non-English as good but unpolished.
 
 #### Operating the service
 
