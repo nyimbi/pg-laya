@@ -6,3 +6,6 @@ test/regression.out
 __pycache__/
 .DS_Store
 core
+
+# zvec-grep local workspace index
+.zvec-grep/
