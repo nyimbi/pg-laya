@@ -4,7 +4,7 @@
 
 # laya — ask your Postgres tables questions in plain language
 
-[![CI](https://github.com/realZachi/pg-laya/actions/workflows/ci.yml/badge.svg)](https://github.com/realZachi/pg-laya/actions/workflows/ci.yml)
+[![CI](https://github.com/nyimbi/pg-laya/actions/workflows/ci.yml/badge.svg)](https://github.com/nyimbi/pg-laya/actions/workflows/ci.yml)
 [![PGXN](https://badge.fury.io/pg/laya.svg)](https://pgxn.org/dist/laya/)
 [![License](https://img.shields.io/badge/license-PostgreSQL-blue.svg)](LICENSE)
 [![Website](https://img.shields.io/badge/website-pglaya.com-0a56cf.svg)](https://pglaya.com)
@@ -65,7 +65,8 @@ joins, `GROUP BY`, `LIMIT`, `ORDER BY laya_prob(...)`.
    `SET laya.state_mode = 'native'` instead sends the row itself as the state with the condition in the
    question, one row per request: the shape the local model is trained on (it cannot reliably separate
    rows in a shared state, so `laya.batch_size` is ignored in this mode).
-3. Up to 2 × `laya.concurrency` requests are in flight over persistent HTTPS connections, and every row is answered
+3. Up to 2 × `laya.concurrency` requests are in flight over persistent keep-alive connections (plain HTTP by
+    default, HTTPS for the cloud endpoint), and every row is answered
    as soon as its batch returns, so a `LIMIT` stops the read-ahead after the in-flight window, and rows that cheaper
    predicates filter out before `laya()` runs (`WHERE age > 60 AND laya(...)`) are skipped rather than judged.
 4. Answers are cached per row content for the session, so re-running, changing the threshold or sorting by
@@ -126,10 +127,10 @@ curl -fsS http://127.0.0.1:11435/             # health probe ("Ollaya is running
 
 The server loads a model on first use (fast: ONNX, memory-mapped) and keeps it warm for
 `OLLAYA_KEEP_ALIVE` (default 5 minutes). For reproducible deployments the checkpoint is pinned by the
-registry manifest — Ollaya verifies every blob against its sha256, and `ollaya show laya:en` reports
-the pinned Hugging Face source and digest. `ollaya list` / `ollaya ps` show the models on the machine
-and the ones loaded in memory. The `laya.model` GUC only changes the model name in the request, not
-the weights.
+registry manifest — Ollaya verifies every blob against its sha256. `ollaya show laya:en` reports the
+architecture, capabilities and the pinned Hugging Face source; `ollaya list` shows every model with its
+id (a short content digest) and size, and `ollaya ps` the ones loaded in memory. The `laya.model` GUC only
+changes the model name in the request, not the weights.
 
 Querying it works out of the box; for best accuracy use the state format the local model was
 trained on — one row per request, the row as the state, the condition in the question:
@@ -181,7 +182,7 @@ The repo ships an [agent skill](.agents/skills/pglaya/SKILL.md) on [skills.sh](h
 your project and tell Claude Code, Codex, Cursor or any other skill-aware agent to finish the job:
 
 ```bash
-npx skills add realZachi/pg-laya
+npx skills add nyimbi/pg-laya
 ```
 
 > Install pglaya on this server and set it up.
@@ -201,12 +202,13 @@ psql -c "CREATE EXTENSION laya CASCADE"
 ```
 
 Use `pgxn install laya --pg_config=/path/to/pg_config` (or `sudo pgxn install laya`) when the server's `pg_config`
-is not on PATH or the extension directory is not writable.
+is not on PATH or the extension directory is not writable. Like `make install`, `pgxn install` also installs the
+companion model server (Ollaya) as a service — `NO_SERVE=1 pgxn install laya` skips it.
 
 ### From source (PGXS)
 
 ```bash
-git clone https://github.com/realZachi/pg-laya.git && cd pg-laya
+git clone https://github.com/nyimbi/pg-laya.git && cd pg-laya
 make install            # uses pg_config on PATH; or: make install PG_CONFIG=/path/to/pg_config
                         # also installs the companion model server (Ollaya) as a service (NO_SERVE=1 skips it)
 psql -c "CREATE EXTENSION laya CASCADE"   # superuser required (plpython3u is untrusted); CASCADE creates plpython3u
@@ -220,9 +222,9 @@ docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pw pg-laya
 psql postgres://postgres:pw@localhost/postgres -c "CREATE EXTENSION laya CASCADE"
 ```
 
-The container runs no service manager, so `make install` inside the image skips the model server.
-Run Ollaya outside the container (another container, or on the host) and point the extension at
-it: `SET laya.api_url = 'http://<server-host>:11435/v1/systemone';` — or use the cloud Jev model (below).
+The image copies the extension files straight into the server (there is no service manager in the
+container), so the model server runs outside it: another container, or on the host. Point the extension
+at it: `SET laya.api_url = 'http://<server-host>:11435/v1/systemone';` — or use the cloud Jev model (below).
 
 ### API key
 
@@ -251,7 +253,7 @@ with `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`.
 | `laya_choice(row, question, options text[])` | text | The most likely option for the row |
 | `laya_confidence(row, question, kind, options)` | float8 | Confidence of a `score`/`choice` answer |
 | `laya_eval(row, question, kind, options)` | jsonb | Full raw answer (probabilities, legend, confidence) |
-| `laya_stats()` | jsonb | Requests, tokens, estimated cost, cache hits, in-flight requests and pooled connections for this session |
+| `laya_stats()` | jsonb | Requests, tokens, rows evaluated, errors and retries, estimated cost, cache hits, in-flight requests and pooled connections for this session |
 | `laya_cache_clear()` | void | Forget cached judgments |
 | `laya_version()` | text | Extension version |
 
@@ -263,12 +265,12 @@ All settings are plain GUCs: `SET laya.<name> = ...`, `ALTER ROLE ... SET`, `ALT
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `laya.api_key` | env `LAYA_API_KEY` (optional) | API key for the endpoint. Not needed for the default local server (no `OLLAYA_API_KEY`); needed when the server enables auth or when using the cloud Jev model |
+| `laya.api_key` | env `LAYA_API_KEY` (optional) | API key for the endpoint (the deprecated `TYPESAFE_API_KEY` environment variable is still honoured as an alias). Not needed for the default local server (no `OLLAYA_API_KEY`); needed when the server enables auth or when using the cloud Jev model |
 | `laya.model` | `laya` | Model name sent in every request. `laya` is Ollaya's router (English / multilingual checkpoint per request); use your endpoint's model name elsewhere (e.g. the cloud Jev model) |
 | `laya.threshold` | `0.5` | Probability at which `laya()` returns true |
 | `laya.batch_size` | `20` | Rows per API request. Accuracy drops measurably above ~20–25 (see above); ignored in `native` state mode (always 1) |
 | `laya.state_mode` | `jev` | Request state format. `jev` = shared state with `rows[]`, `laya.batch_size` rows per request (the cloud Jev model). `native` = one row per request, state is the row itself with the condition in the question — the format the local Laya model is trained on |
-| `laya.concurrency` | `16` | Parallel API requests; up to twice that many are queued ahead of the executor. Keep this low (2-4) when using a local server: it runs one inference at a time, so more connections just queue or get HTTP 503 |
+| `laya.concurrency` | `16` | Parallel API requests; up to twice that many are in flight ahead of the executor. Keep this low (2-4) when using a local server: it runs one inference at a time, so extra parallelism only adds queueing |
 | `laya.max_prefetch_rows` | `5000` | How far past a cache miss the read-ahead scans to find the requested row, and how many skipped rows it keeps for later requests (memory bound) |
 | `laya.notices` | `on` | Emit a progress `NOTICE` per finished request and a summary per table with request count, tokens, estimated cost and time |
 | `laya.api_url` | `http://127.0.0.1:11435/v1/systemone` | Endpoint. Ollaya's local model server (default) speaks the same `/v1/systemone` protocol as the cloud [TypeSafe Jev](https://docs.typesafe.ai) model; point here for proxies, mocks, `laya[serve]`, or the cloud model (`https://api.typesafe.ai/v1/systemone`) |
