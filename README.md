@@ -21,8 +21,6 @@ companion model server on the same machine — [Ollaya](https://ollaya.dev) on
 [TypeSafe Jev](https://docs.typesafe.ai) model instead (same wire protocol, no code change). A loaded
 model runs one inference at a time, so keep `laya.concurrency` low (2-4).
 
-Website: [pglaya.com](https://pglaya.com)
-
 ```sql
 CREATE EXTENSION laya CASCADE;
 
@@ -49,8 +47,9 @@ joins, `GROUP BY`, `LIMIT`, `ORDER BY laya_prob(...)`.
 - [Examples](examples/) — 26 fully-coded, runnable `example.sql` files (12 business, 8 personal, 6
   patterns). Each folder has a `README.md` explaining the scenario; run any of them with
   `psql -d mydb -f examples/business/01-escalate-angry-tickets/example.sql`.
-- [Static reference site](s/index.html) — the docs as a self-contained site (open `s/index.html` in a
-  browser, or `python3 -m http.server` from `s/`).
+- [Reference site](https://nyimbi.github.io/pg-laya/) — the docs as a self-contained static site,
+  published from `s/` by the Pages workflow (open `s/index.html` locally, or
+  `python3 -m http.server` from `s/`).
 
 ## How it works
 
@@ -139,19 +138,16 @@ trained on — one row per request, the row as the state, the condition in the q
 SET laya.state_mode = 'native';   -- per session (or ALTER ROLE ... SET); default is 'jev'
 ```
 
-The local model cannot reliably separate rows in a shared state, so in `native` mode every row is sent
-as its own request and `laya.batch_size` is ignored. Measured on this shape with the real model: a
-"customer is angry" split came out 0.95/0.72 vs 0.00/0.00, and "the country is in Europe" 0.82 for
-Germany vs 0.05 for the USA — the same queries through the default `jev` format score everything
-around 0.8 regardless of content. A 24-example probe with the same shape scored 10/10 on
-"the customer is angry" (ten labelled support tickets), 8/8 routing eight tickets to
-billing/sales/technical, and 7/12 on "the name is European" — strong on tone and intent, weaker at
-inferring nationalities from names. The router picks the multilingual checkpoint automatically per
-request; on the same tasks it scored 6/8 on anger (the two misses at 0.37–0.47), 5/6 on department
-routing and 2/4 on name nationality — treat non-English as good but unpolished. One limit to know:
-`laya:en`'s context is 512 tokens including the question, so a row that does not fit comes back as
-`laya: API error 422 … STATE_TRUNCATED` — use a view with fewer/narrower columns or
-`laya.max_chars_per_statement`.
+Measured on this shape with the real model: a "customer is angry" split came out 0.95/0.72 vs 0.00/0.00,
+and "the country is in Europe" 0.82 for Germany vs 0.05 for the USA — the same queries through the
+default `jev` format score everything around 0.8 regardless of content. A 24-example probe scored 10/10
+on "the customer is angry" (ten labelled tickets), 8/8 routing eight tickets to billing/sales/technical,
+and 7/12 on "the name is European" — strong on tone and intent, weaker at inferring nationalities from
+names. The router picks the multilingual checkpoint per request; on the same tasks it scored 6/8 on
+anger, 5/6 on department routing and 2/4 on name nationality — treat non-English as good but
+unpolished. One limit to know: `laya:en`'s context is 512 tokens including the question, so a row that
+does not fit comes back as `laya: API error 422 … STATE_TRUNCATED` — use a view with fewer/narrower
+columns or `laya.max_chars_per_statement`.
 
 #### Operating the service
 
@@ -187,11 +183,11 @@ npx skills add nyimbi/pg-laya
 
 > Install pglaya on this server and set it up.
 
-The agent runs a preflight (PostgreSQL version, `plpython3u`, superuser), `pgxn install laya` or `make install` against the right
-`pg_config` (which also installs the companion model server, Ollaya, as a service), `CREATE EXTENSION laya CASCADE`
-and runs a smoke test. Afterwards it also knows how to write cost-conscious `laya()` queries ("find the tickets
-where the customer threatens to cancel") and to explain what pglaya can do. The docs are readable as Markdown
-for agents too: append `.md` to any page under https://pglaya.com/docs (see [For agents](https://pglaya.com/docs/for-agents)).
+The agent runs a preflight (PostgreSQL version, `plpython3u`, superuser), then `pgxn install laya` or
+`make install` against the right `pg_config` (which also installs the companion model server, Ollaya,
+as a service), `CREATE EXTENSION laya CASCADE` and a smoke test. Afterwards it also knows how to write
+cost-conscious `laya()` queries and to explain what pglaya can do. The docs are readable as Markdown for
+agents too: append `.md` to any page under https://pglaya.com/docs (see [For agents](https://pglaya.com/docs/for-agents)).
 
 ### From PGXN
 
@@ -373,5 +369,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/PUBLISHING.md](docs/PUBLISHING.
 
 ## License
 
-[PostgreSQL License](LICENSE). Jev and TypeSafe and Laya are trademarks of their respective owners; this project is not
-affiliated with TypeSafe or Laya.
+[PostgreSQL License](LICENSE). Jev, TypeSafe and Laya are trademarks of their respective owners; this
+project is not affiliated with TypeSafe or with Laya's authors.
