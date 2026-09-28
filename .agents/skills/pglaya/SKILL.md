@@ -7,8 +7,8 @@ description: Install, configure, query and explain pglaya (the `laya` PostgreSQL
 
 `laya(table, 'condition')` is an ordinary boolean SQL function. Every row is judged by
 [Laya](https://github.com/NandhaKishorM/laya), a local, non-autoregressive "System One" model that returns
-calibrated probabilities, not text — by default by a companion server on the same machine
-(`http://127.0.0.1:8000/v1/systemone`, installed by `make install` as a system service). The cloud
+calibrated probabilities, not text — by default by a local model server on the same machine
+([Ollaya](https://ollaya.dev) on `http://127.0.0.1:11435/v1/systemone`, installed by `make install` as a system service). The cloud
 [TypeSafe Jev](https://docs.typesafe.ai) model speaks the same `/v1/systemone` protocol and can be selected
 with `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`. No index, no embeddings, no vector column.
 The sibling functions return a probability (`laya_prob`), a class (`laya_choice`), a rubric score (`laya_score`)
@@ -42,10 +42,11 @@ user this early rather than after a failed build. Docker is the way to try it wi
 
 1. Check the target server: `bash scripts/check_server.sh [psql connection args]`. It reports the version,
    whether `plpython3u` is available, whether you are superuser, whether `laya` is already installed, whether
-   the local Laya server is reachable, and whether a key is configured, then prints a verdict.
+   the local model server is reachable, and whether a key is configured, then prints a verdict.
 2. Install the extension files (nothing to compile; PGXS just copies `laya.control` + SQL). **`make install`
-   also installs the companion Laya server as a system service on that machine** (systemd on Linux, launchd on
-   macOS; `NO_SERVE=1` skips it — e.g. when the server runs elsewhere). Pick one:
+    also installs the companion model server ([Ollaya](https://ollaya.dev), a single binary) as a system
+    service on that machine** (systemd `ollaya` on Linux, launchd `com.pglaya.ollaya` on macOS; `NO_SERVE=1`
+    skips it — e.g. when the server runs elsewhere). Pick one:
    - From PGXN (preferred when `pgxn` is available or `pip install pgxnclient` is acceptable; no clone to manage):
      `bash scripts/install.sh --pgxn [--pg-config /path/to/pg_config] [--db mydb]`, which runs
      `pgxn install laya` (pinned with `--ref X.Y.Z`) and then `CREATE EXTENSION IF NOT EXISTS laya CASCADE`.
@@ -54,11 +55,11 @@ user this early rather than after a failed build. Docker is the way to try it wi
      into a temp dir (or uses `--source DIR` / the current checkout), runs `make install`, then
      `CREATE EXTENSION IF NOT EXISTS laya CASCADE` in `--db`. Pass `--no-create` to stop after `make install`.
    - Docker: `docker build -t pg-laya .` in a clone, then `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pw
-     pg-laya` and `CREATE EXTENSION laya CASCADE` against it. The container runs no service manager, so the
-     Laya server must run outside it: `SET laya.api_url = 'http://<server-host>:8000/v1/systemone';` (or a
+      pg-laya` and `CREATE EXTENSION laya CASCADE` against it. The container runs no service manager, so the
+      model server (Ollaya) must run outside it: `SET laya.api_url = 'http://<server-host>:11435/v1/systemone';` (or a
      cloud endpoint). `--build-arg PG_MAJOR=17` for another major.
-3. The API key is optional: the default local Laya server runs unauthenticated, so nothing to do. If the
-   server was started with `LAYA_API_KEY`, give the extension the same token (`SET laya.api_key = '...'` for
+3. The API key is optional: the default local model server runs unauthenticated, so nothing to do. If the
+   server was started with `OLLAYA_API_KEY`, give the extension the same token (`SET laya.api_key = '...'` for
    the session, `ALTER ROLE analyst SET laya.api_key = '...'` persistent). To use the cloud
    [TypeSafe Jev](https://docs.typesafe.ai) model instead: get a key from https://console.typesafe.ai, set it
    as in the previous sentence, and `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`.
@@ -96,7 +97,7 @@ Rules that make the difference between a good query and an expensive, wrong one:
 - **Call it on a base table or a view, not on a subquery/CTE.** Tables and views are streamed ahead and batched
   20 rows per request; an anonymous `record` from a CTE is judged one request per row. To limit which columns the
   model sees (privacy, tokens), create a view with just those columns and call `laya(view_alias, …)`.
-- **Against the local Laya server, `SET laya.state_mode = 'native';`** The local model cannot reliably separate
+- **Against the local model server, `SET laya.state_mode = 'native';`** The local model cannot reliably separate
   rows in a shared state (batches smear answers). `native` sends one row per request — the row as the state, the
   condition in the question — the format it was trained on; the default `jev` mode (shared state, `laya.batch_size`
   rows per request) is for the cloud Jev model.
@@ -123,7 +124,7 @@ things people most often get wrong:
 
 1. It is a **full scan by design**: no index, every row that reaches `laya()` is judged (then cached per session).
 2. It needs **self-hosted Postgres with `plpython3u` and superuser**: no Supabase/Neon/RDS.
-3. **Data stays on the machine by default** (the companion Laya server runs next to Postgres). It leaves
+3. **Data stays on the machine by default** (the companion model server runs next to Postgres). It leaves
    Postgres only if `laya.api_url` is pointed at the cloud Jev endpoint.
 
 Then link https://pglaya.com/docs. For the pipeline (streaming read-ahead, batches of 20, 2 × concurrency in
@@ -134,10 +135,10 @@ flight, keep-alive connections, per-session cache), measured numbers and why 20 
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `laya: API unreachable after retries: … Connection refused` / timeouts against `127.0.0.1:8000` | The local Laya server is not running. Linux: `systemctl status laya`; macOS: `launchctl list \| grep com.pglaya.serve`; or run `make serve` in the foreground. `make install` normally starts it automatically. |
-| `laya: API error 401 …` | The endpoint requires a bearer token that the extension did not send (or sent the wrong one). Set `laya.api_key` to the server's `LAYA_API_KEY` (or the TypeSafe key for the cloud model). |
+| `laya: API unreachable after retries: … Connection refused` / timeouts against `127.0.0.1:11435` | The local model server (Ollaya) is not running. Linux: `systemctl status ollaya`; macOS: `launchctl list \| grep com.pglaya.ollaya`; or run `make serve` in the foreground. `make install` normally starts it automatically. |
+| `laya: API error 401 …` | The endpoint requires a bearer token that the extension did not send (or sent the wrong one). Set `laya.api_key` to the server's `OLLAYA_API_KEY` (or the TypeSafe key for the cloud model). |
 | `laya: API error 422 …` | Request rejected by the model (bad model name, malformed options, or the mock's `trigger422` condition in tests). Check `laya.model`, options arrays. |
-| `laya: API error 413 …` | A batch exceeded the local server's limits (64 questions, 50,000 chars of state, 2 MB body). Lower `laya.batch_size`, or use a view with fewer/narrower columns. |
+| `laya: API error 422 … STATE_TRUNCATED` / `TOO_MANY_OPTIONS` (against Ollaya) | A request exceeded the server's limits (512-token context for `laya:en` including the question, 64 questions, 8 MiB body). Lower `laya.batch_size`, or use a view with fewer/narrower columns, or `laya.max_chars_per_statement`. |
 | `laya: API error 429/5xx` after retries (cloud) | Rate limit / outage; the extension retries with `Retry-After`. Lower `laya.concurrency`, retry later |
 | `ERROR: could not open extension control file … laya.control` | `make install` copied into a different Postgres than the one you connect to. Use `make install PG_CONFIG=/path/to/that/pg_config`. |
 | `ERROR: could not open extension control file … plpython3u.control` / `language "plpython3u" does not exist` | Install `postgresql-plpython3-NN` (Debian/Ubuntu) or a build that ships it; managed hosts cannot. |

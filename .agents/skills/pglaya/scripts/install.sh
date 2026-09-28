@@ -14,8 +14,8 @@
 #   --sudo            run `make install` with sudo (needed when the extension dir is owned by root)
 #
 # psql connection details come from PGHOST/PGPORT/PGUSER/PGPASSWORD. Nothing here is compiled: make install
-# copies laya.control and sql/laya--*.sql into `pg_config --sharedir`/extension, and (unless NO_SERVE=1)
-# installs the companion Laya server as a system service on the target machine.
+ # copies laya.control and sql/laya--*.sql into `pg_config --sharedir`/extension, and (unless NO_SERVE=1)
+ # installs the companion model server (Ollaya) as a system service on the target machine.
 set -euo pipefail
 
 REPO=https://github.com/realZachi/pg-laya.git
@@ -87,7 +87,7 @@ fi
 command -v psql >/dev/null 2>&1 || { echo "psql not found; run this as a superuser in your database:"; echo "  $sql"; exit 0; }
 echo "Creating the extension${db:+ in database $db}"
 if psql ${db:+-d "$db"} -X -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS laya CASCADE" -c "SELECT laya_version()"; then
-  echo "Done. The local Laya server needs no API key by default; run scripts/smoke_test.sql to verify"
+  echo "Done. The local model server needs no API key by default; run scripts/smoke_test.sql to verify"
   echo "(make install also installed the server as a system service on this machine — NO_SERVE=1 skips that)."
 else
   echo "CREATE EXTENSION failed. Common causes: not a superuser, plpython3u not installed for this server, or the" >&2

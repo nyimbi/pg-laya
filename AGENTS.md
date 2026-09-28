@@ -4,8 +4,9 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, Copilot, …) working
 
 `laya` is a PostgreSQL extension that adds plain-language predicates (`WHERE laya(people, 'the name is European')`).
 Every row is judged by Laya, a local, non-autoregressive System-1 model, over the `/v1/systemone` protocol — by
-default `http://127.0.0.1:8000`, a companion server that `make install` installs as a system service on the
-Postgres machine; the cloud TypeSafe Jev endpoint is reachable via `laya.api_url` (same wire protocol).
+default `http://127.0.0.1:11435`, [Ollaya](https://ollaya.dev), a single-binary model server that `make install`
+installs as a system service on the Postgres machine; the cloud TypeSafe Jev endpoint is reachable via
+`laya.api_url` (same wire protocol).
 The whole extension is **one PL/Python function plus SQL wrappers**; there is nothing to compile.
 
 ## Documentation
@@ -32,11 +33,11 @@ for working *on* the extension; the skill is for working *with* it.
 make docker-test                  # full regression run in a throwaway container (PG_MAJOR=16 default)
 make docker-test PG_MAJOR=14      # oldest supported major; CI runs 14, 15, 16, 17
 make install                      # copy control + SQL into the server's extension dir AND install the companion
-                                  # Laya server as a system service on this machine (systemd/launchd; NO_SERVE=1 skips,
-                                  # e.g. in containers — that's what test/Dockerfile and CI rely on)
+                                   # model server (Ollaya) as a system service on this machine (systemd/launchd;
+                                   # NO_SERVE=1 skips, e.g. in containers — that's what test/Dockerfile and CI rely on)
 make install PG_CONFIG=/path/to/pg_config
-make install-serve                # (re)install just the companion server's service
-make serve                        # run the companion server in the foreground (127.0.0.1:8000)
+make install-serve                # (re)install just the companion model server's service
+make serve                        # run the model server in the foreground (127.0.0.1:11435)
 python3 test/mock_api.py &        # deterministic stand-in for the /v1/systemone API (Laya or TypeSafe) on 127.0.0.1:8765
 make installcheck                 # pg_regress against a running server; needs mock_api.py running
 bash test/run.sh                  # what CI does: temp cluster (PGPORT=5499) + mock API + make installcheck
@@ -64,14 +65,18 @@ There is no linter. `.editorconfig` applies (4-space indent, tabs in the Makefil
   copy of the full script with the `\echo` guard changed to `ALTER EXTENSION laya UPDATE`.
 - `laya.control` (`default_version`), `META.json` (PGXN), `CHANGELOG.md` — must all agree on the version; CI's
   `lint-meta` job checks `laya.control` == `META.json` and that `sql/laya--<version>.sql` exists.
-- `scripts/install_service.sh` (+ the `scripts/laya.conf` systemd unit template, `scripts/serve.sh`) — installs
-  the companion Laya server (`python3 -m laya.serve`, the PyPI `laya[serve]` package) as a systemd unit on Linux
-  or a launchd agent on macOS, starts it and polls `http://127.0.0.1:8000/health`. Service config:
-  `/etc/laya/env` + `/etc/systemd/system/laya.service` (Linux; logs via `journalctl -u laya`) or
-  `~/Library/LaunchAgents/laya.serve.plist` (macOS; logs in `~/Library/Logs/laya.serve.*.log`). `LAYA_MODELS` /
-  `LAYA_THREADS` / `LAYA_DEVICE` / `LAYA_PYTHON` are passed through when set; a non-default `LAYA_PORT` makes the
-  installer print the `laya.api_url` the extension needs. `make install` runs it as a prerequisite of the PGXS
-  install; `NO_SERVE=1` skips it (containers, CI).
+- `scripts/install_service.sh` (+ the `scripts/ollaya.conf` systemd unit template, `scripts/serve.sh`) — installs
+  the companion model server ([Ollaya](https://ollaya.dev), a single binary installed via
+  `curl -fsSL https://ollaya.dev/install.sh | sh` if not already present) as a systemd unit `ollaya` on Linux or a
+  launchd agent `com.pglaya.ollaya` on macOS, starts it and polls `http://127.0.0.1:11435/`, then pulls the
+  `laya` model (~1.5 GB, non-fatal if the pull fails — models load on demand). Service config:
+  `/etc/laya/env` + `/etc/systemd/system/ollaya.service` (Linux; logs via `journalctl -u ollaya`) or
+  `~/Library/LaunchAgents/com.pglaya.ollaya.plist` (macOS; logs in `~/Library/Logs/ollaya.serve.*.log`).
+  `OLLAYA_HOST` / `OLLAYA_API_KEY` / `OLLAYA_DEVICE` / `OLLAYA_KEEP_ALIVE` are passed through when set;
+  `LAYA_MODEL` selects the checkpoint to pull (default `laya`, the router); a non-default `OLLAYA_HOST` makes the
+  installer print the `laya.api_url` the extension needs. A server already listening on the address (not ours)
+  is left running — the installer advises, pulls the model and exits. `make install` runs it as a prerequisite
+  of the PGXS install; `NO_SERVE=1` skips it (containers, CI).
 - `test/mock_api.py` — the fake API. Its rules decide expected output: `noul` → 0.9 if the *last word* of
   the condition appears in the row JSON else 0.1; `score`/`choice` → index = `len(row_json) % n`; a condition
   containing `trigger422` returns HTTP 422; auth requires `Bearer test-key` (requests without an Authorization

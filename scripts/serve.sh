@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
-# Run Laya's local HTTP server (the drop-in backend for the laya extension).
+# Run Ollaya's local model server in the foreground (the backend for the laya extension).
 #
-# laya reaches this at http://127.0.0.1:8000/v1/systemone; both endpoints share the /v1/systemone
-# protocol, so the extension needs no code change to switch from api.typesafe.ai here.
+# laya reaches this at http://127.0.0.1:11435/v1/systemone by default; the server also serves the
+# TypeSafe-compatible /v1 API, so the extension works unchanged against any /v1/systemone endpoint.
 #
-#   make serve               # one-shot on this host
-#   LAYA_API_KEY=secret make serve   # require bearer auth (set the same key in laya.api_key)
-#   make install-serve       # install the service (systemd on Linux, launchd on macOS) and start it
+#   make serve                       # one-shot on this host (127.0.0.1:11435)
+#   OLLAYA_API_KEY=secret make serve # require bearer auth (set the same key in laya.api_key)
+#   make install-serve               # install the service (systemd on Linux, launchd on macOS) and start it
 #
-# Configuration is read from the environment (see scripts/laya.conf for the unit). Defaults:
-#   LAYA_HOST=127.0.0.1  LAYA_PORT=8000  LAYA_PRELOAD=1
-#
-# NOTE: `pip install "laya[serve]"` must have been run on this host (make install / make serve do it).
+# Configuration is read from the environment (see scripts/ollaya.conf for the unit): OLLAYA_HOST
+# (127.0.0.1:11435), OLLAYA_DEVICE (auto), OLLAYA_KEEP_ALIVE (5m), OLLAYA_API_KEY, ...
+# The 'ollaya' binary is installed by https://ollaya.dev/install.sh (make install-serve does it).
 
 set -euo pipefail
 
-export LAYA_HOST="${LAYA_HOST:-127.0.0.1}"
-export LAYA_PORT="${LAYA_PORT:-8000}"
-export LAYA_PRELOAD="${LAYA_PRELOAD:-1}"
+if ! command -v ollaya >/dev/null 2>&1; then
+  echo "laya: the 'ollaya' binary was not found on PATH." >&2
+  echo "  Install it:  curl -fsSL https://ollaya.dev/install.sh | sh" >&2
+  echo "  then re-run: make serve" >&2
+  exit 1
+fi
 
-exec python3 -m laya.serve
+export OLLAYA_HOST="${OLLAYA_HOST:-127.0.0.1:11435}"
+
+exec ollaya serve

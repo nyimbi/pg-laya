@@ -20,18 +20,20 @@
 --   laya.api_key            API key for the endpoint (falls back to LAYA_API_KEY in the server environment;
 --                            TYPESAFE_API_KEY is still honoured as a deprecated alias). Optional: endpoints
 --                            without authentication need no key, which is the default local Laya server.
---   laya.model              default 'laya-latest'
+--   laya.model              default 'laya'    on Ollaya, 'laya' is the router that picks the English or
+--                                             multilingual checkpoint per request
 --   laya.threshold          default 0.5   probability at which laya() returns true
 --   laya.batch_size         default 20    rows per API request (accuracy drops measurably above ~20-25 rows)
 --   laya.concurrency        default 16    parallel API requests
 --   laya.max_prefetch_rows  default 5000  how far past a cache miss the read-ahead scans to find the row, and
 --                                        how many skipped rows it keeps for later (memory bound)
 --   laya.notices            default 'on'  emit progress NOTICEs and a summary per table read-ahead
---   laya.api_url            default 'http://127.0.0.1:8000/v1/systemone' — Laya's local server, which
---                            `make install` installs as a system service on this machine (or run `make serve`
---                            in the foreground). The cloud Jev model speaks the same /v1/systemone protocol:
---                            set to 'https://api.typesafe.ai/v1/systemone' to use it, as do proxies and mocks.
---                            The local server runs one inference at a time, so keep laya.concurrency low (2-4).
+--   laya.api_url            default 'http://127.0.0.1:11435/v1/systemone' — Ollaya (https://ollaya.dev), the
+--                            single-binary server for Laya's decision models, which `make install` installs
+--                            as a system service on this machine (or `make serve` in the foreground). The
+--                            cloud Jev model speaks the same /v1/systemone protocol: set to
+--                            'https://api.typesafe.ai/v1/systemone' to use it, as do proxies and mocks.
+--                            A loaded model runs one inference at a time, so keep laya.concurrency low (2-4).
 --   laya.state_mode         default 'jev' 'jev' = the shared-state format: one request carries
 --                            laya.batch_size rows as state {"condition", "rows"} (the cloud Jev model,
 --                            which locates rows[i] by position). 'native' = one row per request, state is
@@ -58,7 +60,7 @@ from urllib.parse import urlsplit
 
 USD_PER_INPUT_TOKEN = 0.042 / 1_000_000  # laya-1.13 list price; output tokens are free
 PAGE_ROWS = 1000                          # rows read from the table per SPI query
-STATE_VERSION = 3
+STATE_VERSION = 4
 
 # ---------------------------------------------------------------- session state (survives across calls)
 if GD.get("laya", {}).get("version") != STATE_VERSION:
@@ -100,13 +102,13 @@ def load_cfg():
     key = g("api_key", None) or os.environ.get("LAYA_API_KEY") or os.environ.get("TYPESAFE_API_KEY")
     # A key is optional: the default local Laya server runs unauthenticated, and the Authorization
     # header is only sent when a key is configured.
-    url = urlsplit(g("api_url", "http://127.0.0.1:8000/v1/systemone"))
+    url = urlsplit(g("api_url", "http://127.0.0.1:11435/v1/systemone"))
     mode = g("state_mode", "jev")
     if mode not in ("jev", "native"):
         plpy.error("laya: laya.state_mode must be 'jev' or 'native'")
     batch = max(1, int(g("batch_size", "20")))
     return {
-        "ts": r["ts"], "api_key": key, "model": g("model", "laya-latest"),
+        "ts": r["ts"], "api_key": key, "model": g("model", "laya"),
         # native mode serves one row per request, so laya.batch_size is ignored there
         "batch_size": 1 if mode == "native" else batch, "concurrency": max(1, int(g("concurrency", "16"))),
         "state_mode": mode, "max_prefetch": max(1, int(g("max_prefetch_rows", "5000"))),

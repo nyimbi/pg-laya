@@ -17,15 +17,15 @@ Settings are read once per cache miss (one SPI query), so changing one takes eff
 
 | Setting | Default | Meaning | Change it when |
 | --- | --- | --- | --- |
-| `laya.api_key` | env `LAYA_API_KEY` of the server (optional) | bearer key for the endpoint; not needed for the default local server (no `LAYA_API_KEY`), needed for the cloud Jev model or a key-protected server | the endpoint requires auth |
-| `laya.model` | `laya-latest` | model name or pinned version such as `laya-1.13.0` | you need reproducible answers across model releases |
+| `laya.api_key` | env `LAYA_API_KEY` of the server (optional) | bearer key for the endpoint; not needed for the default local server (no `OLLAYA_API_KEY`), needed for the cloud Jev model or a key-protected server | the endpoint requires auth |
+| `laya.model` | `laya` | model name sent in every request. `laya` is Ollaya's router (English / multilingual checkpoint per request); set your endpoint's model name elsewhere (e.g. the cloud Jev model, or `laya:en` / `laya:multilingual` to skip the router) | you need a specific checkpoint, or you point at a different endpoint |
 | `laya.threshold` | `0.5` | probability at which `laya()` returns true (the third argument of `laya()` overrides it) | you want stricter/looser matches without editing every query |
-| `laya.batch_size` | `20` | rows per API request | rarely; accuracy drops measurably above ~20–25 because the model finds `rows[i]` by position. Lower it for very wide rows if you see drift, or when the local server answers 413 (50,000-char state limit). Ignored in `native` state mode (always 1 row per request) |
-| `laya.state_mode` | `jev` | request state format: `jev` = shared state with `rows[]` (the cloud Jev model), `native` = one row per request, state is the row itself with the condition in the question | use `native` with the local Laya server — it cannot reliably separate rows in a shared state |
-| `laya.concurrency` | `16` | parallel API requests; up to 2× that many are queued ahead of the executor | keep it low (2-4) with the local server — it runs one inference at a time; lower on cloud 429s or to be gentle on a shared key |
+| `laya.batch_size` | `20` | rows per API request | rarely; accuracy drops measurably above ~20–25 because the model finds `rows[i]` by position. Lower it for very wide rows if you see drift, or when the server rejects the request (Ollaya: 512-token context for `laya:en`, 64 questions, 8 MiB body). Ignored in `native` state mode (always 1 row per request) |
+| `laya.state_mode` | `jev` | request state format: `jev` = shared state with `rows[]` (the cloud Jev model), `native` = one row per request, state is the row itself with the condition in the question | use `native` with the local model server — it cannot reliably separate rows in a shared state |
+| `laya.concurrency` | `16` | parallel API requests; up to 2× that many are queued ahead of the executor | keep it low (2-4) with the local model server — a loaded model runs one inference at a time; lower on cloud 429s or to be gentle on a shared key |
 | `laya.max_prefetch_rows` | `5000` | how far past a cache miss the read-ahead scans to find the requested row, and how many skipped rows it keeps for later (memory bound) | queries with index scans/joins that request rows far apart; memory-constrained servers (lower) |
 | `laya.notices` | `on` | `NOTICE` per finished request plus a per-table summary (rows, requests, tokens, ≈cost, ms) | `off` in applications and tests |
-| `laya.api_url` | `http://127.0.0.1:8000/v1/systemone` | endpoint — the local Laya server (default), [Ollaya](https://ollaya.dev) (`http://127.0.0.1:11435/v1/systemone` + `laya.model = 'laya'`), the cloud Jev model (`https://api.typesafe.ai/v1/systemone`), or a proxy/mock (the regression mock is `http://127.0.0.1:8765/v1/systemone`) | the server runs elsewhere, or you want the cloud model |
+| `laya.api_url` | `http://127.0.0.1:11435/v1/systemone` | endpoint — Ollaya's local model server (default), `laya[serve]`, the cloud Jev model (`https://api.typesafe.ai/v1/systemone`), or a proxy/mock (the regression mock is `http://127.0.0.1:8765/v1/systemone`) | the server runs elsewhere, or you want the cloud model |
 | `laya.timeout` | `30` | seconds per API request. Waits are interruptible: `statement_timeout` and cancel apply within 250 ms | slow networks |
 | `laya.keepalive` | `600` | seconds a pooled HTTPS connection may idle before it is reconnected | proxies that drop idle connections sooner |
 | `laya.max_rows_per_statement` | `0` (off) | abort a statement that would send more rows than this to the API | shared servers, ad-hoc users, anything where a missing `WHERE` would be expensive |
@@ -49,7 +49,7 @@ If the server was installed on a non-default port, `ALTER DATABASE app SET laya.
 ALTER DATABASE app SET laya.max_rows_per_statement = 5000;
 ALTER DATABASE app SET laya.max_chars_per_statement = 2000000;
 ALTER ROLE analyst SET laya.api_key = '...';
-ALTER ROLE analyst SET laya.model = 'laya-1.13.0';     -- pin if results feed a report
+ALTER ROLE analyst SET laya.model = 'laya:en';          -- skip the router: English checkpoint only
 ```
 
 Guard errors read

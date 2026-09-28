@@ -16,23 +16,29 @@ All notable changes to this project are documented here. The format follows
   0.00/0.00; "the country is in Europe" 0.82 (Germany) vs 0.05 (USA); "the name is European" 0.67–0.89 for
   Pierre/Anna vs 0.07 for the rest — the same queries through the `jev` format score everything ≈0.8 or drift
   by batch position. `SET laya.state_mode = 'native';` (per session, role or database) to use it.
-- **`make install` also installs the companion Laya server as a system service on the Postgres machine.** It
-  installs the `laya[serve]` Python package and starts the server on `http://127.0.0.1:8000` — where the
-  extension's default `laya.api_url` points — as a systemd unit (`laya.service`) on Linux or a launchd agent
-  (`com.pglaya.serve`) on macOS, and polls `http://127.0.0.1:8000/health`. `make install-serve` re-runs just
-  this part; `NO_SERVE=1` skips it (containers and CI have no service manager, so it prints how to start the
-  server by hand instead).
+- **`make install` also installs the companion model server as a system service on the Postgres machine.** It
+  installs [Ollaya](https://ollaya.dev) — a single binary serving the Laya decision models over a
+  TypeSafe-compatible `/v1` API (installed via `curl -fsSL https://ollaya.dev/install.sh | sh` if not already
+  present) — and starts it on `http://127.0.0.1:11435`, where the extension's default `laya.api_url` points: a
+  systemd unit (`ollaya.service`) on Linux or a launchd agent (`com.pglaya.ollaya`) on macOS. It then pulls the
+  `laya` model (a router over `laya:en` / `laya:multilingual`, ~1.5 GB, sha256-verified, resumable; non-fatal if
+  it fails — models load on demand). `make install-serve` re-runs just this part; `NO_SERVE=1` skips it
+  (containers and CI have no service manager, so it prints how to start the server by hand instead). If a
+  server already answers on the address and is not managed by us (the Ollaya desktop app, a manual
+  `ollaya serve`), the installer leaves it running, pulls the model and exits.
 
 ### Changed
-- **Default backend is now Laya (local), pluggable to the cloud Jev model.** The default `laya.api_url`
-  is `http://127.0.0.1:8000/v1/systemone` (Laya's local server, the drop-in replacement for
-  `api.typesafe.ai/v1/systemone`) instead of the cloud TypeSafe Jev model. Laya speaks the same
+- **Default backend is now the local model server (Ollaya), pluggable to the cloud Jev model.** The default
+  `laya.api_url` is `http://127.0.0.1:11435/v1/systemone` (Ollaya, the drop-in replacement for
+  `api.typesafe.ai/v1/systemone`) instead of the cloud TypeSafe Jev model, and the default `laya.model` is
+  `laya` — Ollaya's router, which picks the English or multilingual checkpoint per request. The same
   `/v1/systemone` wire protocol, so the request/response paths are unchanged. To use the cloud model again,
-  `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`. Laya runs one inference at a time, so keep
-  `laya.concurrency` low (2-4); more connections just queue (or get HTTP 503).
+  `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';` (and a cloud model name). A loaded model runs
+  one inference at a time, so keep `laya.concurrency` low (2-4); more connections just queue.
 - **The API key is optional.** The extension only sends an `Authorization` header when a key is configured,
-  so the default local server (no `LAYA_API_KEY`) works with zero configuration. The server-side environment
-  variable is `LAYA_API_KEY`; `TYPESAFE_API_KEY` is still honoured as a deprecated fallback. The old
+  so the default local server (no `OLLAYA_API_KEY`) works with zero configuration. The server-side environment
+  variable is `OLLAYA_API_KEY`; `TYPESAFE_API_KEY` is still honoured as a deprecated fallback for
+  `laya.api_key`. The old
   `laya: no API key …` error is gone: a keyless request to an endpoint that requires one now surfaces the
   endpoint's 401.
 

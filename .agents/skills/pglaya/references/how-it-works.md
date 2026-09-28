@@ -6,7 +6,7 @@ Docs: https://pglaya.com/docs/how-it-works.md, https://pglaya.com/docs/caveats.m
 
 Every row is judged by **Laya** (https://github.com/NandhaKishorM/laya), a "System One" model: it does not
 generate text, it returns calibrated probabilities for typed questions over a JSON *state*. By default it runs
-in a companion server on the same machine (`http://127.0.0.1:8000/v1/systemone`, installed by `make install`);
+in a companion server on the same machine (`http://127.0.0.1:11435/v1/systemone`, the Ollaya model server installed by `make install`);
 the cloud **TypeSafe Jev** model (https://docs.typesafe.ai) speaks the same `/v1/systemone` protocol and can
 be selected with `laya.api_url`. pglaya uses three question types:
 
@@ -78,14 +78,14 @@ server the same token counts are reported, but the cost is CPU time (one forward
   superusers can create the extension; managed hosts (Supabase, Neon, RDS…) cannot run it.
 - **Cache per backend.** Connection pools with many backends each warm their own cache. `laya_cache_clear()`
   clears only the current session.
-- **Answers can change** between model releases. Pin `laya.model = 'laya-1.13.0'` when results feed reports.
+- **Answers can change** between model releases. Pin a specific checkpoint (e.g. `laya.model = 'laya:en'`) when results feed reports, instead of the `laya` router.
 - **Not a substitute for SQL.** Arithmetic, dates, equality and joins stay in SQL; the model is for meaning.
 
 ## Versions
 
 | Version | Notes |
 | --- | --- |
-| 0.3.0 | default endpoint is the local Laya server (`make install` also installs it as a system service); API key optional; `LAYA_API_KEY` env |
+| 0.3.0 | default endpoint is the local Ollaya model server (`make install` also installs it as a system service); API key optional; `LAYA_API_KEY` env |
 | 0.2.0 (2026-09-18) | streaming read-ahead, persistent connections, batch 20, concurrency 16, timeout 30, `laya.keepalive`, spend guards, progress notices, interruptible waits |
 | 0.1.0 | whole-table prefetch up to `max_prefetch_rows`, batch 40, concurrency 6, timeout 90 |
 
