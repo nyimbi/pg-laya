@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings — pg-laya</title>
+  <meta name="description" content="pg-laya settings (GUCs): laya.threshold, laya.state_mode, laya.concurrency, spend guards and more.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <h1>Settings</h1>
+        <p class="lead">Every setting is a plain PostgreSQL custom GUC under the <code class="inline-code">laya.</code>
+        prefix, so all the usual scopes apply. Settings are read once per cache miss, so a change takes effect on the
+        next uncached call.</p>
+
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SET laya.threshold = 0.7;                       -- this session
+SET LOCAL laya.max_rows_per_statement = 500;    -- this transaction
+ALTER ROLE analyst SET laya.api_key = '...';    -- persistent for one role
+ALTER DATABASE app SET laya.concurrency = 8;    -- persistent for one database
+SHOW laya.batch_size;                           -- current value ('' → default applies)</code></pre>
+        </div>
+
+        <h2>All settings</h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code class="inline-code">laya.api_key</code></td><td>env <code class="inline-code">LAYA_API_KEY</code> (optional)</td><td>Bearer key for the endpoint. Not needed for the default local server; needed for the cloud Jev model or a key-protected server.</td></tr>
+              <tr><td><code class="inline-code">laya.model</code></td><td><code class="inline-code">laya</code></td><td>Model name sent in every request. <code class="inline-code">laya</code> is Ollaya's router (English / multilingual per request); set <code class="inline-code">laya:en</code> / <code class="inline-code">laya:multilingual</code> to skip the router, or your endpoint's name elsewhere.</td></tr>
+              <tr><td><code class="inline-code">laya.threshold</code></td><td><code class="inline-code">0.5</code></td><td>Probability at which <code class="inline-code">laya()</code> returns true (the third argument overrides it).</td></tr>
+              <tr><td><code class="inline-code">laya.batch_size</code></td><td><code class="inline-code">20</code></td><td>Rows per API request. Accuracy drops measurably above ~20–25. Ignored in <code class="inline-code">native</code> state mode (always 1 row per request).</td></tr>
+              <tr><td><code class="inline-code">laya.state_mode</code></td><td><code class="inline-code">jev</code></td><td><code class="inline-code">jev</code> = shared state with <code class="inline-code">rows[]</code> (cloud Jev model); <code class="inline-code">native</code> = one row per request, state is the row itself. Use <code class="inline-code">native</code> with the local model server.</td></tr>
+              <tr><td><code class="inline-code">laya.concurrency</code></td><td><code class="inline-code">16</code></td><td>Parallel API requests (up to 2× queued). Keep it low (2–4) with the local server — a loaded model runs one inference at a time.</td></tr>
+              <tr><td><code class="inline-code">laya.max_prefetch_rows</code></td><td><code class="inline-code">5000</code></td><td>How far past a cache miss the read-ahead scans, and how many skipped rows it keeps (memory bound).</td></tr>
+              <tr><td><code class="inline-code">laya.notices</code></td><td><code class="inline-code">on</code></td><td><code class="inline-code">NOTICE</code> per finished request plus a per-table summary. Turn <code class="inline-code">off</code> in applications and tests.</td></tr>
+              <tr><td><code class="inline-code">laya.api_url</code></td><td><code class="inline-code">http://127.0.0.1:11435/v1/systemone</code></td><td>Endpoint — Ollaya's local server (default), <code class="inline-code">laya[serve]</code>, the cloud Jev model, or a proxy/mock.</td></tr>
+              <tr><td><code class="inline-code">laya.timeout</code></td><td><code class="inline-code">30</code></td><td>Seconds per API request. Waits are interruptible: <code class="inline-code">statement_timeout</code> and cancel apply within 250 ms.</td></tr>
+              <tr><td><code class="inline-code">laya.keepalive</code></td><td><code class="inline-code">600</code></td><td>Seconds a pooled HTTPS connection may idle before reconnecting.</td></tr>
+              <tr><td><code class="inline-code">laya.max_rows_per_statement</code></td><td><code class="inline-code">0</code> (off)</td><td>Abort a statement that would send more rows than this to the API. A spend guard for shared servers.</td></tr>
+              <tr><td><code class="inline-code">laya.max_chars_per_statement</code></td><td><code class="inline-code">0</code> (off)</td><td>Same, for characters of row data. A guard for wide rows / token budget.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Recommended baseline for the local server</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>ALTER DATABASE app SET laya.state_mode = 'native';              -- the format the local model is trained on
+ALTER DATABASE app SET laya.concurrency = 4;                    -- it runs one inference at a time
+ALTER DATABASE app SET laya.max_rows_per_statement = 5000;      -- spend guard
+ALTER DATABASE app SET laya.max_chars_per_statement = 2000000;</code></pre>
+        </div>
+        <p>If the server was installed on a non-default port, also run
+        <code class="inline-code">ALTER DATABASE app SET laya.api_url = 'http://127.0.0.1:&lt;port&gt;/v1/systemone';</code>.</p>
+
+        <h2>Recommended baseline for a shared server</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>ALTER DATABASE app SET laya.max_rows_per_statement = 5000;
+ALTER DATABASE app SET laya.max_chars_per_statement = 2000000;
+ALTER ROLE analyst SET laya.api_key = '...';
+ALTER ROLE analyst SET laya.model = 'laya:en';   -- skip the router: English checkpoint only</code></pre>
+        </div>
+        <p>Guard errors read <code class="inline-code">laya: this statement would send N rows to the API, above
+        laya.max_rows_per_statement = M</code>, so users know why and can add a filter or raise the limit with
+        <code class="inline-code">SET LOCAL</code> for one statement.</p>
+
+        <h2>Where the API key comes from</h2>
+        <p>Precedence: <code class="inline-code">laya.api_key</code> GUC (any scope) → <code class="inline-code">LAYA_API_KEY</code>
+        in the <strong>server process</strong> environment (<code class="inline-code">TYPESAFE_API_KEY</code> as a deprecated
+        fallback). The client's shell does not count. Setting <code class="inline-code">laya.api_key = ''</code> disables the
+        GUC and falls back to the environment. No key anywhere means no <code class="inline-code">Authorization</code> header —
+        correct for the default local server, which runs unauthenticated.</p>
+
+        <p class="top-link"><a href="settings.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

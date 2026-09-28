@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pg-laya — ask your Postgres tables questions in plain language</title>
+  <meta name="description" content="pg-laya adds plain-language predicates to PostgreSQL. Filter, rank, classify and score rows with natural language — judged locally by the Laya model.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <div class="hero">
+          <span class="badge">v0.3.0 · runs locally by default · no embeddings, no index</span>
+          <h1>Ask your Postgres tables<br>questions in <span class="grad">plain language</span>.</h1>
+          <p class="sub"><code class="inline-code">laya(table, 'the customer is angry')</code> is an ordinary boolean
+            SQL predicate. Every row is judged by <strong>Laya</strong> — a local, non-autoregressive System-1 model
+            that returns calibrated probabilities instead of generated text. Write the condition the way you would
+            say it, and let Postgres do the rest.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="install.html">Get started →</a>
+            <a class="btn btn-ghost" href="examples.html">Browse 25+ examples</a>
+          </div>
+        </div>
+
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> quick start</div>
+          <pre><code>CREATE EXTENSION laya CASCADE;
+
+-- filter rows with a plain-language condition
+SELECT * FROM people WHERE laya(people, 'the name is European');
+
+-- rank rows and take the top ones
+SELECT subject, laya_prob(tickets, 'the customer is angry') AS p
+FROM tickets ORDER BY p DESC LIMIT 20;
+
+-- classify rows into a closed set
+SELECT laya_choice(tickets, 'which team should handle this?',
+                   ARRAY['billing', 'technical', 'security', 'sales']) AS team,
+       count(*)
+FROM tickets GROUP BY 1;</code></pre>
+        </div>
+
+        <p><code class="inline-code">laya()</code> is a <code class="inline-code">STABLE</code> function, so it composes
+        with everything else in SQL: <code class="inline-code">AND age &gt; 40</code>, joins,
+        <code class="inline-code">GROUP BY</code>, <code class="inline-code">LIMIT</code>,
+        <code class="inline-code">ORDER BY laya_prob(…)</code>, views and materialised pipelines.</p>
+
+        <h2>How it works, in three steps</h2>
+        <div class="steps">
+          <div class="step">
+            <div class="n"></div>
+            <div>
+              <h3>The row becomes the question</h3>
+              <p>The whole row is serialised with <code class="inline-code">to_json</code> and sent to the model
+                along with your condition. Column names are part of what the model sees, so descriptive names help.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n"></div>
+            <div>
+              <h3>Laya returns a calibrated number</h3>
+              <p>Instead of generating text, Laya does one forward pass and returns a probability (or a
+                probability vector for a closed set). No index, no vector column, no embeddings to keep in sync.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n"></div>
+            <div>
+              <h3>Postgres treats it as a boolean</h3>
+              <p><code class="inline-code">laya()</code> is just a <code class="inline-code">WHERE</code> predicate.
+                Cheaper filters run first, answers are cached per row for the session, and the result streams back
+                like any other query.</p>
+            </div>
+          </div>
+        </div>
+
+        <h2>What you get</h2>
+        <div class="grid cols-3">
+          <div class="card">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg></div>
+            <h3>Plain-language WHERE</h3>
+            <p>Filter rows with a sentence. Add a threshold argument or <code class="inline-code">laya.threshold</code> for a stricter cut.</p>
+          </div>
+          <div class="card">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></div>
+            <h3>Rank &amp; score</h3>
+            <p><code class="inline-code">laya_prob</code> for a 0..1 score to <code class="inline-code">ORDER BY</code>; <code class="inline-code">laya_score</code> for a rubric position.</p>
+          </div>
+          <div class="card">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+            <h3>Classify &amp; route</h3>
+            <p><code class="inline-code">laya_choice</code> picks one label from a closed set; <code class="inline-code">laya_confidence</code> tells you when to route to a human.</p>
+          </div>
+          <div class="card">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg></div>
+            <h3>Local by default</h3>
+            <p>Ships with Ollaya, a single-binary model server, installed as a system service next to Postgres. No cloud key, data stays on the machine.</p>
+          </div>
+          <div class="card">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></div>
+            <h3>Fast to first answer</h3>
+            <p>Read-ahead streams rows in physical order, batches 20 per request, and answers each row as soon as its batch returns.</p>
+          </div>
+          <div class="card">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg></div>
+            <h3>Composable SQL</h3>
+            <p>Works in <code class="inline-code">WHERE</code>, <code class="inline-code">SELECT</code>, joins, <code class="inline-code">GROUP BY</code>, <code class="inline-code">CASE</code> and views.</p>
+          </div>
+        </div>
+
+        <h2>Start here</h2>
+        <div class="grid cols-2">
+          <a class="card" href="install.html">
+            <h3>Installation →</h3>
+            <p>Requirements, the local model server, and the four ways to install (agent, PGXN, source, Docker).</p>
+          </a>
+          <a class="card" href="functions.html">
+            <h3>SQL functions →</h3>
+            <p>Every <code class="inline-code">laya_*</code> function with signatures, shapes and worked snippets.</p>
+          </a>
+          <a class="card" href="patterns.html">
+            <h3>Writing good queries →</h3>
+            <p>Turn a request into SQL, phrase conditions well, and keep costs predictable.</p>
+          </a>
+          <a class="card" href="examples.html">
+            <h3>25+ worked examples →</h3>
+            <p>Business, personal and technique examples — each fully coded and ready to run.</p>
+          </a>
+        </div>
+
+        <p class="top-link"><a href="index.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

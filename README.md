@@ -43,6 +43,15 @@ FROM products ORDER BY luxury DESC;
 `laya()` is an ordinary boolean function, so it composes with everything else in SQL: `AND age > 40`,
 joins, `GROUP BY`, `LIMIT`, `ORDER BY laya_prob(...)`.
 
+## Docs & examples
+
+- [Documentation](https://pglaya.com/docs) — install, functions, settings, how it works, caveats.
+- [Examples](examples/) — 26 fully-coded, runnable `example.sql` files (12 business, 8 personal, 6
+  patterns). Each folder has a `README.md` explaining the scenario; run any of them with
+  `psql -d mydb -f examples/business/01-escalate-angry-tickets/example.sql`.
+- [Static reference site](s/index.html) — the docs as a self-contained site (open `s/index.html` in a
+  browser, or `python3 -m http.server` from `s/`).
+
 ## How it works
 
 1. `laya(table, 'condition')` receives the row as a composite value. The first call for a table + condition starts a

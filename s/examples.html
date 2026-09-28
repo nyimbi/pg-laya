@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Examples — pg-laya</title>
+  <meta name="description" content="26 fully-coded, runnable pg-laya examples: 12 business, 8 personal, 6 patterns. Each is a complete SQL file you can run as-is.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <h1>Examples</h1>
+        <p class="lead">26 fully-coded, runnable examples: <strong>12 business</strong>, <strong>8 personal</strong>,
+        <strong>6 patterns</strong>. Each is a complete <code class="inline-code">example.sql</code> — it creates a small
+        sample table, seeds realistic rows, and runs the query. Swap in your own table to use it for real.</p>
+
+        <div class="note info"><span class="ico">▶</span><div>
+          <p>Run any of them straight from the repo:
+          <code class="inline-code">psql -d mydb -f examples/business/01-escalate-angry-tickets/example.sql</code>.
+          Prereq: the <code class="inline-code">laya</code> extension and the local model server (see
+          <a href="install.html">Installation</a>). Click a card to expand it.</p>
+        </div></div>
+
+        <h2>Business <span class="rel-date">· 12</span></h2>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">01</span><span class="ttl">Escalate angry tickets</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Rank open tickets by how angry the customer sounds, so the most urgent surface first.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT id, subject,
+       laya_prob(tickets, 'the customer is angry, frustrated, or about to give up') AS anger
+FROM tickets WHERE status = 'open'
+ORDER BY anger DESC LIMIT 5;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/01-escalate-angry-tickets/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">02</span><span class="ttl">Route tickets by team</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Classify each ticket into the owning team and count the workload per team.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT laya_choice(tickets, 'which team should handle this ticket?',
+                   ARRAY['billing','technical','security','sales']) AS team,
+       count(*)
+FROM tickets WHERE status = 'open'
+GROUP BY 1 ORDER BY 2 DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/02-route-tickets-by-team/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">03</span><span class="ttl">Score inbound leads</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Score each lead by purchase intent (budget, authority, timeline) so reps work the hottest first.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT company, contact, title,
+       laya_prob(leads, 'this lead has budget, authority, and intent to buy within a quarter') AS intent
+FROM leads ORDER BY intent DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/03-score-inbound-leads/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">04</span><span class="ttl">Segment customers by persona</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Bucket customers into marketing personas from their usage behaviour, and size each segment.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT laya_choice(customers, 'which best describes this customer?',
+                   ARRAY['enterprise buyer','power user','self-serve pro','window shopper']) AS persona,
+       count(*)
+FROM customers GROUP BY 1 ORDER BY 2 DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/04-segment-customers-by-persona/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">05</span><span class="ttl">Flag churn risk</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Read each account's support history, rank by churn signal, and total the at-risk MRR.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT account, mrr_usd,
+       laya_prob(accounts, 'this account is showing signs it will cancel or not renew') AS churn_risk
+FROM accounts ORDER BY churn_risk DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/05-flag-churn-risk/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">06</span><span class="ttl">Rank job applicants</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Rank a candidate stack against the role's must-haves so a human screens the top, not all of it.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT name,
+       laya_prob(applicants, 'a strong match for a senior backend role: 5+ years, Go or Rust, deep Postgres, production experience') AS fit
+FROM applicants ORDER BY fit DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/06-rank-job-applicants/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">07</span><span class="ttl">Categorize product feedback</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Bucket reviews by theme and see the average rating per theme — what users actually talk about.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT laya_choice(reviews, 'what is this review mainly about?',
+                   ARRAY['reliability / bugs','pricing','missing feature','praise','support experience','performance']) AS theme,
+       count(*), round(avg(rating::numeric), 2) AS avg_rating
+FROM reviews GROUP BY 1 ORDER BY 2 DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/07-categorize-product-feedback/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">08</span><span class="ttl">Prioritize the support queue</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Score tickets on an urgency rubric and blend with how old they are — priority, not arrival order.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT id, subject,
+       laya_score(tickets, 'how urgent is this ticket for the customer?',
+                  ARRAY['not at all','minor','important','blocking']) AS urgency   -- 0..3
+FROM tickets ORDER BY urgency DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/08-prioritize-support-queue/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">09</span><span class="ttl">Detect fraud signals</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Read each transaction's context and rank by fraud signal, so a human reviews a short list.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT id, amount_usd, merchant,
+       laya_prob(transactions, 'this transaction shows signs of fraud or unauthorised use') AS risk
+FROM transactions ORDER BY risk DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/09-detect-fraud-signals/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">10</span><span class="ttl">Sentiment by week</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Count, per week, how many reviews the customer sounds frustrated in — a trend you can chart.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT date_trunc('week', created_at) AS week,
+       count(*) FILTER (WHERE laya(reviews, 'the customer sounds frustrated or upset')) AS frustrated,
+       count(*) AS total
+FROM reviews GROUP BY 1 ORDER BY 1 DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/10-sentiment-by-week/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">11</span><span class="ttl">Did the meeting decide?</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Flag the meetings that ended with a concrete decision or an owner + date, versus the ones that spun.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT topic, held_on,
+       laya(meetings, 'the meeting ended with a concrete decision or an assigned action with an owner and date') AS decided
+FROM meetings ORDER BY held_on;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/11-did-the-meeting-decide/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">12</span><span class="ttl">Route by language + confidence</span><span class="tag biz">business</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Route to the right language team, but send the low-confidence ones to a human instead of guessing.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT id,
+       laya_choice(messages, 'which language team should reply first?',
+                   ARRAY['english','spanish','french','german','needs a human']) AS team,
+       round(laya_confidence(messages, 'which language team should reply first?', 'choice',
+                             ARRAY['english','spanish','french','german','needs a human'])::numeric, 2) AS conf
+FROM messages;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/business/12-route-by-language-and-confidence/example.sql</code></p></div>
+        </div>
+
+        <h2>Personal <span class="rel-date">· 8</span></h2>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">01</span><span class="ttl">Categorize expenses</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Auto-categorize a month of card transactions so you see where the money went.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT laya_choice(transactions, 'what category is this purchase?',
+                   ARRAY['groceries','dining','transport','utilities','entertainment','health','subscriptions','travel','other']) AS category,
+       round(sum(amount_usd), 2) AS total
+FROM transactions GROUP BY 1 ORDER BY 2 DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/01-categorize-expenses/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">02</span><span class="ttl">Prioritize the inbox</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Rank emails by "needs a reply soon" so you start with what matters, not what arrived first.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT sender, subject,
+       laya_prob(emails, 'this email needs a reply from me soon, or has a deadline I must meet') AS urgency
+FROM emails ORDER BY urgency DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/02-prioritize-inbox/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">03</span><span class="ttl">Tag photos by memory</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Give each photo's caption a memory type — family, travel, food, … — browse by moment, not date.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT taken_on, caption,
+       laya_choice(photos, 'what kind of memory is this photo of?',
+                   ARRAY['family','travel','food','work','fitness','friends','nature','milestone']) AS memory
+FROM photos ORDER BY taken_on;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/03-tag-photos-by-memory/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">04</span><span class="ttl">Organize recipes</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Classify recipes by meal and diet, then answer "quick vegetarian dinner for tonight".</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT name
+FROM recipes
+WHERE laya(recipes, 'this is a vegetarian or vegan dish')
+  AND laya(recipes, 'this recipe is quick, ready in under an hour');</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/04-organize-recipes/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">05</span><span class="ttl">Pick a movie night</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Rank your watchlist by fit for the mood you want tonight — picking takes seconds.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT title, year,
+       laya_prob(watchlist, 'a good fit for a relaxed, light movie night with friends') AS fit
+FROM watchlist WHERE NOT watched
+ORDER BY fit DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/05-pick-a-movie-night/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">06</span><span class="ttl">Track habit notes</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Read journal entries and flag the days a habit was actually kept — your real streak, no check-ins.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT day,
+       laya(journal, 'the person went for a run on this day') AS ran
+FROM journal ORDER BY day;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/06-track-habit-notes/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">07</span><span class="ttl">Plan a move</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Sort your inventory into keep / donate / sell / recycle in one pass, and count each bucket.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT laya_choice(inventory, 'for a house move, what should happen to this item?',
+                   ARRAY['keep','donate','sell','recycle']) AS disposition,
+       count(*)
+FROM inventory GROUP BY 1 ORDER BY 2 DESC;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/07-plan-a-move/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">08</span><span class="ttl">Find relevant notes</span><span class="tag pers">personal</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Search notes by meaning, not keywords — every note about a topic, however you phrased it.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT id, body
+FROM notes
+WHERE laya(notes, 'this note is about preparing for a job interview')
+ORDER BY created_at;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/personal/08-find-relevant-notes/example.sql</code></p></div>
+        </div>
+
+        <h2>Patterns &amp; techniques <span class="rel-date">· 6</span></h2>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">01</span><span class="ttl">Pick a threshold</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Look at the probability distribution, inspect the ambiguous middle, then apply your cutoff — from the cache.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT width_bucket(laya_prob(reviews, 'the customer sounds frustrated or upset'), 0, 1, 10) AS bucket,
+       count(*)
+FROM reviews GROUP BY 1 ORDER BY 1;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/patterns/01-pick-a-threshold/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">02</span><span class="ttl">Multi-label topics</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Tag a row with every topic it covers (not just one), using the full probability vector.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT id,
+       laya_eval(messages, 'which topics does this message cover?', 'choice',
+                 ARRAY['billing','technical','security','sales','praise']) -&gt; 'probabilities' AS topics
+FROM messages;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/patterns/02-multi-label-topics/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">03</span><span class="ttl">Human in the loop</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Auto-apply confident classifications, and queue the low-confidence ones for a person.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>UPDATE tickets t
+SET team = laya_choice(t, 'which team should handle this ticket?', ARRAY['billing','technical','sales'])
+WHERE laya_confidence(t, 'which team should handle this ticket?', 'choice',
+                      ARRAY['billing','technical','sales']) &gt;= 0.6;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/patterns/03-human-in-the-loop/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">04</span><span class="ttl">Limit what the model sees</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Put a view in front of the table so only the needed columns are judged — PII and blobs stay out.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>CREATE VIEW support_text AS SELECT id, message FROM support;
+SELECT id,
+       laya_choice(v, 'which team should handle this message?', ARRAY['billing','technical','account']) AS team
+FROM support_text v;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/patterns/04-limit-model-visibility/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">05</span><span class="ttl">Manage costs on large tables</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Cheap SQL first, a bounded window, a spend guard, and <code>laya_stats()</code> to see what it cost.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SET laya.max_rows_per_statement = 1000;
+SELECT count(*) FILTER (WHERE laya(events, 'the customer is upset or about to cancel')) AS upset
+FROM events
+WHERE channel = 'email' AND created_at &gt;= now() - interval '7 days';</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/patterns/05-manage-costs-large-tables/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">06</span><span class="ttl">Compose with plain SQL</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Judge the side that carries the text, then join, CTE, <code>CASE</code> and aggregate with normal SQL.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT c.name, c.plan,
+       laya(t, 'this customer is threatening to cancel or mentions a competitor') AS at_risk
+FROM tickets t
+JOIN customers c ON c.id = t.customer_id;</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/patterns/06-compose-with-plain-sql/example.sql</code></p></div>
+        </div>
+
+        <p class="top-link"><a href="examples.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

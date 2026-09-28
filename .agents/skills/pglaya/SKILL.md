@@ -114,7 +114,9 @@ Rules that make the difference between a good query and an expensive, wrong one:
   may not be shared.
 
 Worked examples for filter, rank, classify, score, joins, views, GROUP BY and thresholds are in
-`references/query-patterns.md`. Read it when the request is more than a one-liner.
+`references/query-patterns.md`. Read it when the request is more than a one-liner. For complete,
+runnable end-to-end scenarios (seeded tables + query), the repo ships 26 of them in `examples/`
+(12 business, 8 personal, 6 patterns) — e.g. `examples/business/01-escalate-angry-tickets/`.
 
 ## Explain
 
@@ -163,3 +165,4 @@ pooled connections for the session and is the first thing to look at.
 - `references/settings.md` — every GUC with default and when to change it.
 - `references/query-patterns.md` — worked SQL for filter, rank, classify, score, views, joins, thresholds, spend.
 - `references/how-it-works.md` — pipeline, cache, cost model, measured numbers, caveats.
+- Repo `examples/` — 26 fully-coded, runnable examples (12 business, 8 personal, 6 patterns), each folder a `README.md` + `example.sql`.

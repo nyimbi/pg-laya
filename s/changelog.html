@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Changelog — pg-laya</title>
+  <meta name="description" content="pg-laya release notes: 0.3.0 (Ollaya local server, native state mode), 0.2.0 (streaming read-ahead), 0.1.0.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <h1>Changelog</h1>
+        <p class="lead">All notable changes. The format follows Keep a Changelog; the project uses Semantic Versioning.</p>
+
+        <div class="release">
+          <div class="rel-head"><span class="rel-ver">0.3.0</span><span class="pill">Unreleased</span></div>
+          <h3>Added</h3>
+          <ul>
+            <li><strong><code class="inline-code">laya.state_mode</code> — a <code class="inline-code">native</code> request format for the local Laya model.</strong> The default <code class="inline-code">jev</code> mode packs <code class="inline-code">laya.batch_size</code> rows into one shared state — what the cloud Jev model is built for. The local model cannot reliably separate rows in a shared state, so <code class="inline-code">native</code> sends one row per request: the row itself as the state, the condition in the question. <code class="inline-code">laya.batch_size</code> is ignored in <code class="inline-code">native</code> mode.</li>
+            <li><strong><code class="inline-code">make install</code> also installs the companion model server as a system service.</strong> It installs <a href="https://ollaya.dev" target="_blank" rel="noopener">Ollaya</a> — a single binary serving the Laya decision models — and starts it on <code class="inline-code">http://127.0.0.1:11435</code>: a systemd unit on Linux or a launchd agent on macOS, then pulls the <code class="inline-code">laya</code> router model (~1.5 GB, sha256-verified, resumable, non-fatal).</li>
+          </ul>
+          <h3>Changed</h3>
+          <ul>
+            <li><strong>Default backend is now the local model server (Ollaya), pluggable to the cloud Jev model.</strong> Default <code class="inline-code">laya.api_url</code> is <code class="inline-code">http://127.0.0.1:11435/v1/systemone</code> and default <code class="inline-code">laya.model</code> is <code class="inline-code">laya</code> (Ollaya's router). Keep <code class="inline-code">laya.concurrency</code> low (2–4) — a loaded model runs one inference at a time.</li>
+            <li><strong>The API key is optional.</strong> The extension only sends an <code class="inline-code">Authorization</code> header when a key is configured, so the default local server works with zero configuration. The server-side variable is <code class="inline-code">OLLAYA_API_KEY</code>.</li>
+          </ul>
+          <h3>Fixed</h3>
+          <ul>
+            <li>A Python syntax error (missing brace) in the 0.2.0 → 0.3.0 upgrade script.</li>
+          </ul>
+        </div>
+
+        <div class="release">
+          <div class="rel-head"><span class="rel-ver">0.2.0</span><span class="rel-date">2026-09-18</span></div>
+          <p>Measured against the live API on a 2,000-row table (~190 ms RTT): first run 8.5 s → 3.5 s,
+          <code class="inline-code">LIMIT 3</code> on a fresh condition 8.4 s → 0.6 s, 12% fewer input tokens, and
+          answers that match single-row evaluation instead of drifting.</p>
+          <ul>
+            <li><strong>Streaming read-ahead</strong> — a table is no longer read whole before the first answer; it is streamed in physical order and each row is answered as soon as its batch returns. Memory is constant whatever the table size.</li>
+            <li><strong>Persistent HTTPS connections</strong> — keep-alive across batches and statements (one TLS handshake per connection: 880 ms → 300 ms per request from Europe).</li>
+            <li><strong><code class="inline-code">laya.batch_size</code> 40 → 20</strong> — 100% correct up to 20 rows per request, falling at 40 and 80. Cost: +4% input tokens.</li>
+            <li><strong><code class="inline-code">laya.concurrency</code> 6 → 16</strong> and <strong><code class="inline-code">laya.timeout</code> 90 → 30 s</strong> (waits now interruptible within 250 ms).</li>
+            <li>Added <code class="inline-code">laya.keepalive</code>, progress <code class="inline-code">NOTICE</code>s, <code class="inline-code">Retry-After</code> handling, and <code class="inline-code">retries</code>/<code class="inline-code">in_flight</code>/<code class="inline-code">connections</code> to <code class="inline-code">laya_stats()</code>.</li>
+          </ul>
+        </div>
+
+        <div class="release">
+          <div class="rel-head"><span class="rel-ver">0.1.0</span><span class="rel-date">2026-09-17</span></div>
+          <ul>
+            <li><code class="inline-code">laya()</code>, <code class="inline-code">laya_prob()</code>, <code class="inline-code">laya_score()</code>, <code class="inline-code">laya_score_norm()</code>, <code class="inline-code">laya_choice()</code>, <code class="inline-code">laya_confidence()</code>, <code class="inline-code">laya_eval()</code>.</li>
+            <li>Whole-table read-ahead with batched, concurrent requests and a per-session answer cache.</li>
+            <li><code class="inline-code">laya_stats()</code> and <code class="inline-code">laya_cache_clear()</code>, plus the full settings set and spend guards.</li>
+            <li>Regression suite against a deterministic mock API; CI for PostgreSQL 14–17.</li>
+          </ul>
+        </div>
+
+        <p class="top-link"><a href="changelog.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Functions — pg-laya</title>
+  <meta name="description" content="The pg-laya SQL functions: laya, laya_prob, laya_choice, laya_score, laya_confidence, laya_eval and session helpers.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <h1>Functions</h1>
+        <p class="lead">All functions take the <strong>row</strong> as first argument: the table, view or subquery alias
+        (<code class="inline-code">laya(people, …)</code>, <code class="inline-code">laya(p, …)</code> after
+        <code class="inline-code">FROM people p</code>). Postgres passes the whole row as a composite value; the extension
+        serialises it with <code class="inline-code">to_json</code>. Column names are part of what the model sees, so
+        descriptive names help. All are <code class="inline-code">STABLE</code>.</p>
+
+        <h2>Judgment functions</h2>
+
+        <h3>laya(row, condition [, threshold]) → boolean</h3>
+        <p>The predicate. Equivalent to
+        <code class="inline-code">laya_prob(row, condition) &gt;= coalesce(threshold, laya.threshold, 0.5)</code>. The
+        threshold argument beats the <code class="inline-code">laya.threshold</code> GUC beats <code class="inline-code">0.5</code>.</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT * FROM reviews WHERE laya(reviews, 'the customer sounds frustrated');
+SELECT * FROM reviews WHERE laya(reviews, 'the customer sounds frustrated', 0.8);</code></pre>
+        </div>
+
+        <h3>laya_prob(row, condition) → float8</h3>
+        <p>Probability 0..1 that the row satisfies the condition. Use for ranking, distributions and choosing a
+        threshold. Calibrated: ambiguous rows sit near 0.5.</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT subject, laya_prob(tickets, 'the customer is angry') AS p
+FROM tickets ORDER BY p DESC LIMIT 20;</code></pre>
+        </div>
+
+        <h3>laya_choice(row, question, options text[]) → text</h3>
+        <p>The most likely option, returned verbatim from <code class="inline-code">options</code>. Options are a closed
+        set — there is no "none of the above" unless you add one, so prefer a set where every row has a sensible answer.</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT laya_choice(tickets, 'which team should handle this?',
+                   ARRAY['billing','technical','security','sales']) AS team,
+       count(*)
+FROM tickets GROUP BY 1;</code></pre>
+        </div>
+
+        <h3>laya_score(row, question, levels text[]) → float8</h3>
+        <p>Probability-weighted position on the ordered <code class="inline-code">levels</code>, from
+        <code class="inline-code">0</code> (first) to <code class="inline-code">n-1</code> (last). A row the model puts at
+        60% <code class="inline-code">premium</code> / 40% <code class="inline-code">luxury</code> on
+        <code class="inline-code">['budget','mid-range','premium','luxury']</code> scores <code class="inline-code">2.4</code>.
+        List levels low → high.</p>
+
+        <h3>laya_score_norm(row, question, levels text[]) → float8</h3>
+        <p><code class="inline-code">laya_score / (n-1)</code>, i.e. 0..1, so scores on rubrics of different lengths are comparable.</p>
+
+        <h3>laya_confidence(row, question, kind, options text[]) → float8</h3>
+        <p>Confidence 0..1 of a <code class="inline-code">'choice'</code> or <code class="inline-code">'score'</code>
+        answer. Route low-confidence rows to a human:</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT id,
+       laya_choice(t, 'which team?', ARRAY['billing','technical','sales']) AS team,
+       laya_confidence(t, 'which team?', 'choice', ARRAY['billing','technical','sales']) AS conf
+FROM tickets t
+WHERE laya_confidence(t, 'which team?', 'choice', ARRAY['billing','technical','sales']) &lt; 0.6;</code></pre>
+        </div>
+        <div class="note tip"><span class="ico">✓</span><div>
+          <p>The same <code class="inline-code">(question, kind, options)</code> triple hits the same cache entry, so calling
+          <code class="inline-code">laya_choice</code> and <code class="inline-code">laya_confidence</code> with identical
+          arguments costs one API call, not two.</p>
+        </div></div>
+
+        <h3>laya_eval(row, question, kind DEFAULT 'noul', options text[]) → jsonb</h3>
+        <p>The raw answer. <code class="inline-code">kind</code> is <code class="inline-code">'noul'</code>,
+        <code class="inline-code">'choice'</code> or <code class="inline-code">'score'</code>; <code class="inline-code">options</code>
+        is required for the last two. Use it when you need the full probability vector (e.g. multi-label routing).</p>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>kind</th><th>jsonb shape</th></tr></thead>
+            <tbody>
+              <tr><td><code class="inline-code">noul</code></td><td><code class="inline-code">{"type":"noul","noul":0.93}</code></td></tr>
+              <tr><td><code class="inline-code">choice</code></td><td><code class="inline-code">{"type":"choice","choice":"billing","probabilities":{"billing":0.8,"technical":0.15,"sales":0.05},"confidence":0.8}</code></td></tr>
+              <tr><td><code class="inline-code">score</code></td><td><code class="inline-code">{"type":"score","score":2.4,"legend":{...},"probabilities":{...},"confidence":0.6}</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Session helpers</h2>
+
+        <h3>laya_stats() → jsonb</h3>
+        <p>Counters for the current backend session: <code class="inline-code">requests, input_tokens, output_tokens,
+        rows_evaluated, cache_hits, api_ms, batches, errors, retries, estimated_cost_usd, cached_answers, in_flight,
+        connections</code>. <code class="inline-code">estimated_cost_usd = input_tokens × $0.042 / 1M</code> (output tokens free).</p>
+
+        <h3>laya_cache_clear() → void</h3>
+        <p>Forgets cached answers and read-ahead state for this session only. Answers are cached by row content, so an
+        <code class="inline-code">UPDATE</code> changes the hash and re-judges automatically. Mostly needed when switching
+        <code class="inline-code">laya.model</code> and wanting fresh answers.</p>
+
+        <h3>laya_version() → text</h3>
+        <p>Extension version, e.g. <code class="inline-code">0.3.0</code>. Compare with
+        <code class="inline-code">SELECT default_version FROM pg_available_extensions WHERE name='laya'</code> to see whether
+        <code class="inline-code">ALTER EXTENSION laya UPDATE</code> is pending.</p>
+
+        <div class="note warn"><span class="ico">⚠</span><div>
+          <p><code class="inline-code">_laya_eval(…)</code> is the internal function every wrapper calls. Its signature is not
+          part of the stable API — do not call it directly in user-facing SQL.</p>
+        </div></div>
+
+        <p class="top-link"><a href="functions.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

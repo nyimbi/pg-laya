@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How it works — pg-laya</title>
+  <meta name="description" content="How pg-laya judges rows: the Laya model, the read-ahead pipeline, batching, caching, costs and honest caveats.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <h1>How it works</h1>
+        <p class="lead">How a plain-language condition becomes a set of calibrated probabilities — and the honest
+        limits of the approach.</p>
+
+        <h2>The model</h2>
+        <p>Every row is judged by <strong>Laya</strong>
+        (<a href="https://github.com/NandhaKishorM/laya" target="_blank" rel="noopener">github.com/NandhaKishorM/laya</a>),
+        a "System One" model. It does not generate text — it returns <em>calibrated probabilities</em> for typed
+        questions over a JSON <em>state</em>. By default it runs in a companion server on the same machine
+        (<code class="inline-code">http://127.0.0.1:11435/v1/systemone</code>, the Ollaya model server installed by
+        <code class="inline-code">make install</code>); the cloud <strong>TypeSafe Jev</strong> model speaks the same
+        <code class="inline-code">/v1/systemone</code> protocol and can be selected with <code class="inline-code">laya.api_url</code>.</p>
+        <p>pg-laya uses three question types:</p>
+        <ul>
+          <li><strong>noul</strong> (yes/no) — <code class="inline-code">laya</code>, <code class="inline-code">laya_prob</code> → a probability that the row satisfies the condition.</li>
+          <li><strong>choice</strong> — <code class="inline-code">laya_choice</code> → a probability per option.</li>
+          <li><strong>score</strong> — <code class="inline-code">laya_score</code>, <code class="inline-code">laya_score_norm</code> → a probability per ordered level, collapsed to a weighted index.</li>
+        </ul>
+        <p>Because answers are probabilities, <code class="inline-code">laya_prob</code> is meaningful for ranking and
+        thresholds, and confidence values are real rather than self-reported.</p>
+
+        <h2>The pipeline</h2>
+        <div class="steps">
+          <div class="step"><div class="n"></div><div><h3>Row in</h3><p>The row arrives as a composite value, is serialised with <code class="inline-code">to_json</code> and hashed. A cache hit for that (relation, question) and row content returns immediately without touching SPI or the API.</p></div></div>
+          <div class="step"><div class="n"></div><div><h3>Read-ahead</h3><p>The first miss for a table + question starts a job that streams the relation in physical order — TID range scans for tables and materialised views, <code class="inline-code">OFFSET</code>/<code class="inline-code">LIMIT</code> pages for views, partitioned and foreign tables, 1,000 rows per SPI page. Memory stays constant whatever the table size.</p></div></div>
+          <div class="step"><div class="n"></div><div><h3>Batch</h3><p>Rows are packed <code class="inline-code">laya.batch_size</code> (20) per request into one shared state with one question per row. One request judges all 20 in parallel, amortising the ~270-token request overhead to ~175 input tokens per row.</p></div></div>
+          <div class="step"><div class="n"></div><div><h3>In flight</h3><p>Up to 2 × <code class="inline-code">laya.concurrency</code> requests run on a per-session thread pool over persistent HTTPS connections (one TLS handshake per connection, not per request). Each row is answered as soon as its batch returns, so a <code class="inline-code">LIMIT</code> stops the read-ahead and rows filtered by cheaper predicates are skipped, not judged.</p></div></div>
+          <div class="step"><div class="n"></div><div><h3>Cache</h3><p>Answers are cached by row content in the backend session. Re-running, changing the threshold, sorting by <code class="inline-code">laya_prob</code> or aggregating is free. A different condition is a new scan.</p></div></div>
+        </div>
+        <div class="note warn"><span class="ico">⚠</span><div>
+          <p>Rows from a subquery or CTE (an anonymous <code class="inline-code">record</code>) cannot be read ahead and are
+          judged one request per row. That is the single most common reason for a slow pg-laya query — put
+          <code class="inline-code">laya()</code> on base tables or views when you can.</p>
+        </div></div>
+
+        <h2>Why 20 rows per request</h2>
+        <p>The model finds <code class="inline-code">rows[i]</code> by position inside the array. Against ground truth
+        from structured columns (400 rows each), batches of 1–20 rows were 100% correct, batches of 40 were 92–98%,
+        batches of 80 were 77–94%. Row width made no difference at 20. Batches of 20 cost only 4% more tokens than 40
+        and are as fast — so <code class="inline-code">laya.batch_size</code> defaults to 20 and should stay there.</p>
+
+        <h2>Measured numbers</h2>
+        <p>Cloud Jev API, from Europe, ~190 ms RTT, 2,000-row table:</p>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Scenario</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>New condition, full table</td><td>≈ 3.5 s, 100 requests, ≈ 296k input tokens, ≈ $0.012</td></tr>
+              <tr><td>Same query again in the session</td><td>≈ 50 ms (cache)</td></tr>
+              <tr><td><code class="inline-code">LIMIT 3</code> on a new condition</td><td>≈ 0.6 s</td></tr>
+              <tr><td>New condition, warm pooled connections</td><td>≈ 2.3 s (first request per fresh connection pays TLS + setup)</td></tr>
+              <tr><td>Version 0.1.0 for comparison</td><td>8.5 s and 338k tokens for the same full query</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Cost formula (cloud Jev model): <code class="inline-code">input_tokens × $0.042 / 1M</code> (output tokens
+        free). Rule of thumb <strong>≈ 175 tokens ≈ $0.0000074 per row</strong> — 1k rows ≈ $0.007, 100k rows ≈ $0.7.
+        <code class="inline-code">laya_stats()</code> reports the running total. Against the local server the same token
+        counts are reported, but the cost is CPU time (one forward pass at a time).</p>
+
+        <h2>Caveats, stated plainly</h2>
+        <ul>
+          <li><strong>Full scan by design.</strong> No index can answer a plain-language condition; every row that reaches <code class="inline-code">laya()</code> is judged (once per session). Cut the set in SQL first.</li>
+          <li><strong>Data stays local by default.</strong> Row contents go to the companion server on the same machine and nowhere else. They leave Postgres only if <code class="inline-code">laya.api_url</code> points at the cloud model — use a view to send only what is needed.</li>
+          <li><strong>Untrusted language, superuser install.</strong> <code class="inline-code">plpython3u</code> runs with the OS privileges of the server process. Only superusers can create the extension.</li>
+          <li><strong>Cache per backend.</strong> Connection pools with many backends each warm their own cache. <code class="inline-code">laya_cache_clear()</code> clears only the current session.</li>
+          <li><strong>Answers can change</strong> between model releases. Pin a specific checkpoint (e.g. <code class="inline-code">laya.model = 'laya:en'</code>) when results feed reports.</li>
+          <li><strong>Not a substitute for SQL.</strong> Arithmetic, dates, equality and joins stay in SQL; the model is for meaning.</li>
+        </ul>
+
+        <p class="top-link"><a href="how-it-works.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

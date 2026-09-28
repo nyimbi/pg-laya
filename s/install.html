@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Installation — pg-laya</title>
+  <meta name="description" content="Install the pg-laya PostgreSQL extension and its local Ollaya model server.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <h1>Installation</h1>
+        <p class="lead">pg-laya is a PostgreSQL extension plus a companion model server. <code class="inline-code">make install</code>
+        does both: it copies the extension into your server <em>and</em> installs <a href="https://ollaya.dev" target="_blank" rel="noopener">Ollaya</a>
+        (a single binary that serves the Laya decision models) as a system service on the same machine.</p>
+
+        <div class="note info"><span class="ico">ⓘ</span><div>
+          <p>Managed hosts that withhold superuser or <code class="inline-code">plpython3u</code>
+          (Supabase, Neon, RDS/Aurora, …) cannot run pg-laya. Docker is the easiest way to try it without touching a host.</p>
+        </div></div>
+
+        <h2>Requirements</h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Requirement</th><th>Why</th><th>Check</th></tr></thead>
+            <tbody>
+              <tr><td>PostgreSQL 14, 15, 16 or 17</td><td>Tested majors (CI runs all four)</td><td><code class="inline-code">SHOW server_version;</code></td></tr>
+              <tr><td><code class="inline-code">plpython3u</code> available</td><td>The extension is one PL/Python function</td><td><code class="inline-code">SELECT * FROM pg_available_extensions WHERE name='plpython3u';</code></td></tr>
+              <tr><td>Superuser</td><td><code class="inline-code">plpython3u</code> is an untrusted language</td><td><code class="inline-code">SELECT rolsuper FROM pg_roles WHERE rolname=current_user;</code></td></tr>
+              <tr><td><code class="inline-code">curl</code> on the machine</td><td><code class="inline-code">make install</code> installs Ollaya (no Python needed for that part)</td><td><code class="inline-code">curl --version</code></td></tr>
+              <tr><td>No API key, by default</td><td>The local server is unauthenticated; a key is only needed with <code class="inline-code">OLLAYA_API_KEY</code> or the cloud Jev model</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>With an AI agent (easiest)</h2>
+        <p>The repo ships an <a href="https://skills.sh" target="_blank" rel="noopener">agent skill</a>. Install it into your
+        project and tell Claude Code, Codex, Cursor or any skill-aware agent to finish the job:</p>
+        <div class="code">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> bash</div>
+          <pre><code>npx skills add realZachi/pg-laya</code></pre>
+        </div>
+        <p>Then simply say:</p>
+        <div class="code">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <pre><code>&gt; Install pglaya on this server and set it up.</code></pre>
+        </div>
+        <p>The agent runs a preflight (Postgres version, <code class="inline-code">plpython3u</code>, superuser), installs the
+        extension <em>and</em> the model server, runs <code class="inline-code">CREATE EXTENSION laya CASCADE</code>, and runs a smoke test.</p>
+
+        <h2>From PGXN</h2>
+        <div class="code">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> bash</div>
+          <pre><code>pgxn install laya                 # pinned: pgxn install laya --ref 0.3.0
+psql -d mydb -c "CREATE EXTENSION laya CASCADE;"</code></pre>
+        </div>
+
+        <h2>From source (PGXS)</h2>
+        <div class="code">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> bash</div>
+          <pre><code>git clone https://github.com/nyimbi/pg-laya && cd pg-laya
+make install                      # also installs the Ollaya model server as a service
+psql -d mydb -c "CREATE EXTENSION laya CASCADE;"</code></pre>
+        </div>
+        <div class="note info"><span class="ico">ⓘ</span><div>
+          <p>There is nothing to compile — PGXS just copies <code class="inline-code">laya.control</code> and
+          <code class="inline-code">sql/laya--*.sql</code> into the extension directory that <code class="inline-code">pg_config</code>
+          points at. Use <code class="inline-code">make install PG_CONFIG=/path/to/pg_config</code> to target a specific server, and
+          <code class="inline-code">NO_SERVE=1 make install</code> to skip the model server (containers, CI, or when it runs elsewhere).</p>
+        </div></div>
+
+        <h2>Docker</h2>
+        <div class="code">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> bash</div>
+          <pre><code>docker build -t pg-laya .
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pw pg-laya
+psql -h 127.0.0.1 -U postgres -d postgres -c "CREATE EXTENSION laya CASCADE;"</code></pre>
+        </div>
+        <p>The container runs no service manager, so the model server runs outside it. Point the extension at it:
+        <code class="inline-code">SET laya.api_url = 'http://&lt;server-host&gt;:11435/v1/systemone';</code></p>
+
+        <h2>The Ollaya model server</h2>
+        <p><code class="inline-code">make install</code> installs Ollaya and starts it on
+        <code class="inline-code">http://127.0.0.1:11435</code> (where the default <code class="inline-code">laya.api_url</code>
+        points), as a systemd unit <code class="inline-code">ollaya</code> on Linux or a launchd agent
+        <code class="inline-code">com.pglaya.ollaya</code> on macOS. It then pulls the <code class="inline-code">laya</code>
+        model — a router over <code class="inline-code">laya:en</code> / <code class="inline-code">laya:multilingual</code>,
+        ~1.5 GB, sha256-verified, resumable. Models load on first use and stay warm for
+        <code class="inline-code">OLLAYA_KEEP_ALIVE</code> (default 5 minutes).</p>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Task</th><th>Linux (systemd)</th><th>macOS (launchd)</th></tr></thead>
+            <tbody>
+              <tr><td>Status</td><td><code class="inline-code">systemctl status ollaya</code></td><td><code class="inline-code">launchctl list | grep com.pglaya.ollaya</code></td></tr>
+              <tr><td>Logs</td><td><code class="inline-code">journalctl -u ollaya -f</code></td><td><code class="inline-code">tail -f ~/Library/Logs/ollaya.serve.err.log</code></td></tr>
+              <tr><td>Restart</td><td><code class="inline-code">sudo systemctl restart ollaya</code></td><td><code class="inline-code">launchctl kickstart -k gui/$(id -u)/com.pglaya.ollaya</code></td></tr>
+              <tr><td>Stop</td><td><code class="inline-code">sudo systemctl disable --now ollaya</code></td><td><code class="inline-code">launchctl bootout gui/$(id -u)/com.pglaya.ollaya</code></td></tr>
+              <tr><td>Models</td><td colspan="2"><code class="inline-code">ollaya list</code> · <code class="inline-code">ollaya ps</code> · <code class="inline-code">ollaya show laya:en</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Server environment (set at install time, passed to the service): <code class="inline-code">OLLAYA_HOST</code>
+        (127.0.0.1:11435), <code class="inline-code">OLLAYA_API_KEY</code> (off), <code class="inline-code">OLLAYA_DEVICE</code>
+        (auto), <code class="inline-code">OLLAYA_KEEP_ALIVE</code> (5m). Re-run <code class="inline-code">OLLAYA_…=… make install-serve</code>
+        to change any of them.</p>
+
+        <h2>API key (optional)</h2>
+        <p>None by default. If you enable auth on the server (<code class="inline-code">OLLAYA_API_KEY=secret make install-serve</code>),
+        give the extension the same token:</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SET laya.api_key = 'secret';                  -- this session
+ALTER ROLE analyst SET laya.api_key = 'secret'; -- persistent for a role</code></pre>
+        </div>
+
+        <h2>Verify</h2>
+        <div class="code">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> bash</div>
+          <pre><code>psql -d mydb -f scripts/smoke_test.sql</code></pre>
+        </div>
+        <p>It creates a temp table, runs each function once, and prints <code class="inline-code">laya_stats()</code> so you can
+        see requests, tokens and estimated cost.</p>
+
+        <p class="top-link"><a href="install.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Query patterns — pg-laya</title>
+  <meta name="description" content="How to turn a request into pg-laya SQL: filter, rank, classify, score, views, joins, large tables and wording.">
+  <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
+</head>
+<body class="page">
+  <header class="site-header">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Toggle navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html">
+      <span class="mark">λ</span>
+      pg-laya <span class="ver">v0.3.0</span>
+    </a>
+    <div class="header-spacer"></div>
+    <nav class="header-links">
+      <a href="examples.html">Examples</a>
+      <a href="functions.html">Docs</a>
+      <a href="https://github.com/nyimbi/pg-laya" target="_blank" rel="noopener">GitHub</a>
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle color theme"><span id="theme-icon"></span></button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">
+        <div class="group-label">Getting started</div>
+        <nav>
+          <a href="index.html">Introduction</a>
+          <a href="install.html">Installation</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Reference</div>
+        <nav>
+          <a href="functions.html">Functions</a>
+          <a href="settings.html">Settings</a>
+          <a href="how-it-works.html">How it works</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Guides</div>
+        <nav>
+          <a href="patterns.html">Query patterns</a>
+          <a href="examples.html">Examples</a>
+        </nav>
+      </div>
+      <div class="group">
+        <div class="group-label">Project</div>
+        <nav>
+          <a href="changelog.html">Changelog</a>
+        </nav>
+      </div>
+      <div class="foot">pg-laya docs<br>Local, plain-language predicates for PostgreSQL</div>
+    </aside>
+
+    <main class="content">
+      <div class="doc">
+        <h1>Query patterns</h1>
+        <p class="lead">How to turn a request into SQL: (1) decide the output shape → function, (2) write every cheap
+        condition in SQL first, (3) phrase the model's condition literally, (4) call it on a base table or view, (5) if
+        the user has not chosen a threshold, start with <code class="inline-code">laya_prob()</code> and look. Cost: ~175
+        input tokens per row.</p>
+
+        <h2>1. Filter (yes/no)</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT id, subject
+FROM tickets
+WHERE status = 'open'                              -- cheap, indexed, runs first
+  AND created_at &gt;= now() - interval '7 days'
+  AND laya(tickets, 'the customer threatens to cancel or asks for a refund');</code></pre>
+        </div>
+        <p>Stricter cut: <code class="inline-code">laya(tickets, '…', 0.8)</code>. Negation: <code class="inline-code">NOT
+        laya(tickets, '…')</code> keeps rows below the threshold, including ambiguous ones; for "clearly not X" use
+        <code class="inline-code">laya_prob(...) &lt; 0.2</code>.</p>
+
+        <h2>2. Rank / top-N</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT subject, laya_prob(tickets, 'the customer is angry') AS p
+FROM tickets
+WHERE status = 'open'
+ORDER BY p DESC
+LIMIT 20;</code></pre>
+        </div>
+        <p><code class="inline-code">LIMIT</code> does not save API calls here (sorting needs every probability), but a
+        <code class="inline-code">WHERE laya(...)</code> + <code class="inline-code">LIMIT</code> without
+        <code class="inline-code">ORDER BY</code> stops the read-ahead after the in-flight window.</p>
+
+        <h2>3. Pick a threshold from the distribution</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT width_bucket(laya_prob(reviews, 'the customer sounds frustrated'), 0, 1, 10) AS bucket, count(*)
+FROM reviews
+GROUP BY 1 ORDER BY 1;</code></pre>
+        </div>
+        <p>Then <code class="inline-code">SELECT … WHERE laya(reviews, '…', 0.7)</code>. The second statement is free:
+        same table + condition → cache. Spot-check the middle with
+        <code class="inline-code">WHERE laya_prob(...) BETWEEN 0.4 AND 0.6</code> to see what the model finds ambiguous.</p>
+
+        <h2>4. Classify into a closed set</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT laya_choice(tickets, 'which team should handle this ticket?',
+                   ARRAY['billing', 'technical', 'security', 'sales']) AS team,
+       count(*)
+FROM tickets
+WHERE status = 'open'
+GROUP BY 1
+ORDER BY 2 DESC;</code></pre>
+        </div>
+        <p>Write the options as a person would read them; every row must fit one. Persisting labels:</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>UPDATE tickets t
+SET team = laya_choice(t, 'which team should handle this ticket?',
+                       ARRAY['billing','technical','security','sales'])
+WHERE team IS NULL;</code></pre>
+        </div>
+
+        <h2>5. Score on a rubric</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT name,
+       laya_score(products, 'how luxurious is this product?',
+                 ARRAY['budget', 'mid-range', 'premium', 'luxury']) AS luxury   -- 0..3
+FROM products
+ORDER BY luxury DESC;
+
+-- combine rubrics (0..1 each):
+SELECT name,
+       0.6 * laya_score_norm(p, 'how luxurious?', ARRAY['budget','mid-range','premium','luxury'])
+     + 0.4 * laya_score_norm(p, 'how urgent is restocking?', ARRAY['not at all','somewhat','very']) AS priority
+FROM products p
+ORDER BY priority DESC;</code></pre>
+        </div>
+
+        <h2>6. Limit what the model sees: a view</h2>
+        <p>The whole row is sent. When the table has columns the model does not need (PII, large blobs, internal ids),
+        make a view — views are streamed and batched like tables.</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>CREATE VIEW ticket_text AS
+SELECT id, subject, body FROM tickets WHERE status = 'open';
+
+SELECT id FROM ticket_text v WHERE laya(v, 'the customer threatens legal action');</code></pre>
+        </div>
+
+        <h2>7. Joins</h2>
+        <p><code class="inline-code">laya()</code> takes one row type, so judge the side that carries the text and join
+        the rest. To judge a combination of columns from two tables, build a view over the join.</p>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT c.name, t.subject
+FROM tickets t
+JOIN customers c ON c.id = t.customer_id
+WHERE c.plan = 'enterprise'
+  AND laya(t, 'this is a billing dispute');</code></pre>
+        </div>
+
+        <h2>8. Aggregates and CASE</h2>
+        <div class="code lang-sql">
+          <div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div>
+          <pre><code>SELECT date_trunc('week', created_at) AS week,
+       count(*) FILTER (WHERE laya(reviews, 'the customer sounds frustrated')) AS frustrated,
+       count(*) AS total
+FROM reviews
+WHERE created_at &gt;= now() - interval '90 days'
+GROUP BY 1 ORDER BY 1;</code></pre>
+        </div>
+        <p>Two different conditions are two scans (two cache keys). Prefer one <code class="inline-code">laya_choice</code>
+        with both options when they are mutually exclusive.</p>
+
+        <h2>9. Large tables and spend</h2>
+        <p>Every row reaching <code class="inline-code">laya()</code> costs tokens. In order of preference:</p>
+        <ol>
+          <li>Indexed predicates before <code class="inline-code">laya()</code> (<code class="inline-code">status</code>, dates, ids, <code class="inline-code">tsvector @@</code> for keywords).</li>
+          <li>A view with only the needed columns (fewer characters per row).</li>
+          <li>A spend guard while exploring: <code class="inline-code">SET laya.max_rows_per_statement = 2000;</code></li>
+          <li><code class="inline-code">LIMIT</code> with a plain <code class="inline-code">WHERE laya(...)</code> (stops early).</li>
+          <li>Sample first to test the wording: <code class="inline-code">FROM reviews TABLESAMPLE SYSTEM (5) WHERE laya(reviews, '…')</code>.</li>
+        </ol>
+        <p>Estimate before running: rows × ~175 tokens × $0.042 / 1M. 10,000 rows ≈ 1.75M tokens ≈ $0.07.</p>
+
+        <h2>10. Same session, repeated exploration</h2>
+        <p>Answers are cached per (relation type, question, kind, options) and row content for the backend session.
+        Iterating on thresholds, sorting, <code class="inline-code">LIMIT</code>, joins or aggregates over the same
+        condition is free; changing a single word of the condition is a new scan. Keep the session open while exploring;
+        <code class="inline-code">SELECT laya_stats()</code> shows <code class="inline-code">cache_hits</code> climbing.</p>
+
+        <h2>Wording checklist for the condition</h2>
+        <ul>
+          <li>Name the observable behaviour, not the label: <em>'the reviewer says the product broke within a month'</em> rather than <em>'quality issue'</em>.</li>
+          <li>One condition per call. "A or B" is fine when the user wants either; a list of five things is better as <code class="inline-code">laya_choice</code>.</li>
+          <li>Refer to the row as "the record", "the ticket", "the customer" — matching the column names the model will see.</li>
+          <li>Do not ask for computation (<em>'the total is above 100'</em>): put it in SQL.</li>
+          <li>Language: the condition can be in one language, the data in another. Say which language a text column is in if it matters.</li>
+        </ul>
+
+        <p class="top-link"><a href="patterns.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <span>pg-laya — ask your Postgres tables questions in plain language.</span>
+    <span><a href="https://github.com/nyimbi/pg-laya">GitHub</a> · <a href="https://pglaya.com">pglaya.com</a></span>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>
