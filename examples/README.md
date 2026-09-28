@@ -14,7 +14,7 @@ the local-server defaults (`laya.state_mode = 'native'`,
 your own table to use it for real. Prereq: the `laya` extension installed and
 the local model server running (see [`s/install.html`](../s/install.html)).
 
-Counts: **12 business · 8 personal · 6 patterns = 26 examples.**
+Counts: **12 business · 8 personal · 7 patterns = 27 examples.**
 
 ## Business
 
@@ -56,6 +56,7 @@ Counts: **12 business · 8 personal · 6 patterns = 26 examples.**
 | 04 | [Limit what the model sees](patterns/04-limit-model-visibility/) | Use a view to keep PII/blobs out of the model | view as input |
 | 05 | [Manage costs on large tables](patterns/05-manage-costs-large-tables/) | Cheap SQL first, spend guards, `laya_stats()` | spend discipline |
 | 06 | [Compose with plain SQL](patterns/06-compose-with-plain-sql/) | Joins, CTEs, `CASE`, aggregates around `laya()` | `laya` as `STABLE` fn |
+| 07 | [React to new rows](patterns/07-react-to-new-rows/) | Trigger enqueues, scheduled tick judges and acts | `laya_watch` |
 
 ## Conventions
 

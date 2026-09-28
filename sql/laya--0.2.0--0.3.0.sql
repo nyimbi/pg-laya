@@ -592,3 +592,184 @@ COMMENT ON FUNCTION laya(anyelement, text, float8) IS 'True when the row satisfi
 COMMENT ON FUNCTION laya_prob(anyelement, text) IS 'Probability (0..1) that the row satisfies the condition.';
 COMMENT ON FUNCTION laya_score(anyelement, text, text[]) IS 'Probability-weighted rating along ordered levels.';
 COMMENT ON FUNCTION laya_choice(anyelement, text, text[]) IS 'Classifies the row into one option.';
+
+-- ------------------------------------------------------------------ reactions: laya_watch
+--
+-- laya_watch(rel, condition, action) arms a reaction to new or changed rows: a cheap row
+-- trigger only enqueues the row (no model call in the write path), and laya_watch_tick()
+-- judges the pending rows and runs action(payload jsonb) on the matches. Actions run at
+-- least once, so make them idempotent. Run the tick from pg_cron, an app worker, or by hand:
+--
+--   SELECT laya_watch('tickets', 'the customer threatens to cancel', 'route_to_billing');
+--   SELECT laya_watch_tick();                 -- e.g. every minute via pg_cron
+--   SELECT * FROM laya_watches();             -- armed watches + pending counts
+--   SELECT laya_unwatch(watch_id);            -- disarm (drops the trigger when unused)
+
+CREATE TABLE IF NOT EXISTS laya_watch (
+  watch_id   text PRIMARY KEY,
+  rel        regclass NOT NULL,
+  condition  text NOT NULL,
+  action     text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS laya_watch_queue (
+  id          bigserial PRIMARY KEY,
+  watch_id    text NOT NULL REFERENCES laya_watch(watch_id) ON DELETE CASCADE,
+  payload     jsonb NOT NULL,
+  enqueued_at timestamptz NOT NULL DEFAULT now(),
+  done        boolean NOT NULL DEFAULT false
+);
+
+-- Judge a row you already have as jsonb: one request per row, no read-ahead (nothing to stream).
+CREATE OR REPLACE FUNCTION laya_row_prob(rec jsonb, condition text)
+RETURNS float8 LANGUAGE sql STABLE AS $$
+  SELECT (_laya_eval('jsonb', rec::text, $2, 'noul', NULL)->>'noul')::float8
+$$;
+
+CREATE OR REPLACE FUNCTION laya_row(rec jsonb, condition text, threshold float8 DEFAULT NULL)
+RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT laya_row_prob($1, $2) >= COALESCE($3, NULLIF(current_setting('laya.threshold', true), '')::float8, 0.5)
+$$;
+
+-- The trigger function: enqueue the new row for every watch on the relation. Never calls the model.
+-- Dedupes by content: a row identical to one already queued (pending or judged) is not enqueued again.
+-- A watch on a partitioned root also catches rows inserted through any partition (TG_RELID is the
+-- partition, so match against the watch's whole partition tree).
+CREATE OR REPLACE FUNCTION _laya_watch_enqueue() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  v jsonb;
+BEGIN
+  v := to_json(NEW)::jsonb;
+  INSERT INTO laya_watch_queue (watch_id, payload)
+  SELECT w.watch_id, v
+  FROM laya_watch w
+  WHERE (w.rel = TG_RELID
+         OR TG_RELID = ANY (ARRAY(SELECT relid FROM pg_partition_tree(w.rel))))
+    AND NOT EXISTS (SELECT 1 FROM laya_watch_queue q WHERE q.watch_id = w.watch_id AND q.payload = v);
+  RETURN NEW;
+END $$;
+
+CREATE OR REPLACE FUNCTION laya_watch_ensure_trigger(rel regclass) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = rel AND tgname = '_laya_watch_enqueue') THEN
+    EXECUTE format('CREATE TRIGGER _laya_watch_enqueue AFTER INSERT OR UPDATE ON %s FOR EACH ROW EXECUTE FUNCTION _laya_watch_enqueue()', rel);
+  END IF;
+END $$;
+
+-- Arm a watch: validate the relation and the action, register it, make sure the trigger exists.
+-- Re-running with the same watch_id (or the default id for this rel + condition) re-arms it.
+CREATE OR REPLACE FUNCTION laya_watch(rel text, condition text, action text, watch_id text DEFAULT NULL)
+RETURNS text LANGUAGE plpgsql AS $$
+DECLARE
+  r regclass;
+  rk char;
+  wid text;
+BEGIN
+  SELECT c.oid, c.relkind INTO r, rk FROM pg_class c WHERE c.oid = to_regclass(rel);
+  IF r IS NULL THEN
+    RAISE EXCEPTION 'laya: no such relation %', rel;
+  END IF;
+  IF rk NOT IN ('r', 'p') THEN
+    RAISE EXCEPTION 'laya: cannot watch %: only regular and partitioned tables', rel;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname = ANY (current_schemas(true))
+                   AND p.proname = split_part(action, '.', -1)
+                   AND p.pronargs = 1 AND p.proargtypes[0] = 'jsonb'::regtype) THEN
+    RAISE EXCEPTION 'laya: no function % taking one jsonb argument to run on matches', action;
+  END IF;
+  wid := COALESCE(watch_id, 'w' || substr(md5(rel || E'\n' || condition), 1, 8));
+  EXECUTE 'INSERT INTO laya_watch (watch_id, rel, condition, action)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (watch_id) DO UPDATE
+             SET rel = EXCLUDED.rel, condition = EXCLUDED.condition, action = EXCLUDED.action'
+    USING wid, r, condition, action;
+  PERFORM laya_watch_ensure_trigger(r);
+  RETURN wid;
+END $$;
+
+-- Disarm a watch. Deletes its queued rows (ON DELETE CASCADE) and drops the trigger when no
+-- watch on the relation remains. Returns false when no such watch exists.
+CREATE OR REPLACE FUNCTION laya_unwatch(watch_id text)
+RETURNS boolean LANGUAGE plpgsql AS $$
+DECLARE
+  r regclass;
+  n int;
+BEGIN
+  EXECUTE 'DELETE FROM laya_watch WHERE watch_id = $1 RETURNING rel' INTO r USING watch_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n = 0 THEN
+    RETURN false;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM laya_watch WHERE rel = r) THEN
+    EXECUTE format('DROP TRIGGER IF EXISTS _laya_watch_enqueue ON %s', r);
+  END IF;
+  RETURN true;
+END $$;
+
+-- The tick: for each watch, run the action on the pending rows that match, mark them done,
+-- and prune judged history (the last 10,000 per watch are kept for content dedupe). One
+-- failing action rolls the whole tick back; judgments are cached, so the next tick retries
+-- cheaply. Returns the number of actions run.
+CREATE OR REPLACE FUNCTION laya_watch_tick()
+RETURNS int LANGUAGE plpgsql AS $$
+DECLARE
+  w record;
+  acted int := 0;
+  n int;
+  fn text;
+BEGIN
+  FOR w IN SELECT watch_id, condition, action FROM laya_watch ORDER BY watch_id LOOP
+    IF position('.' in w.action) > 0 THEN
+      fn := quote_ident(split_part(w.action, '.', 1)) || '.' || quote_ident(split_part(w.action, '.', -1));
+    ELSE
+      fn := quote_ident(w.action);
+    END IF;
+    EXECUTE format('SELECT %s(q.payload) FROM laya_watch_queue q WHERE q.watch_id = %L AND NOT q.done AND laya_row(q.payload, %L)',
+                   fn, w.watch_id, w.condition);
+    GET DIAGNOSTICS n = ROW_COUNT;
+    acted := acted + n;
+    UPDATE laya_watch_queue SET done = true WHERE watch_id = w.watch_id AND NOT done;
+    DELETE FROM laya_watch_queue
+    WHERE watch_id = w.watch_id AND done
+      AND id NOT IN (SELECT id FROM laya_watch_queue
+                     WHERE watch_id = w.watch_id AND done ORDER BY id DESC LIMIT 10000);
+  END LOOP;
+  RETURN acted;
+END $$;
+
+CREATE OR REPLACE FUNCTION laya_watches()
+RETURNS TABLE (watch_id text, rel regclass, condition text, action text, pending bigint, created_at timestamptz)
+LANGUAGE sql STABLE AS $$
+  SELECT w.watch_id, w.rel, w.condition, w.action,
+         (SELECT count(*) FROM laya_watch_queue q WHERE q.watch_id = w.watch_id AND NOT q.done),
+         w.created_at
+  FROM laya_watch w ORDER BY w.watch_id
+$$;
+
+-- The rows waiting to be judged.
+CREATE OR REPLACE FUNCTION laya_watch_queue()
+RETURNS TABLE (watch_id text, payload jsonb, enqueued_at timestamptz, age interval)
+LANGUAGE sql STABLE AS $$
+  SELECT q.watch_id, q.payload, q.enqueued_at, now() - q.enqueued_at
+  FROM laya_watch_queue q WHERE NOT q.done ORDER BY q.id
+$$;
+
+-- Abandon the pending rows of a watch (poison-pill escape hatch). Returns how many were skipped.
+CREATE OR REPLACE FUNCTION laya_watch_skip(watch_id text)
+RETURNS bigint LANGUAGE sql AS $$
+  WITH d AS (UPDATE laya_watch_queue SET done = true WHERE watch_id = $1 AND NOT done RETURNING 1)
+  SELECT count(*) FROM d
+$$;
+
+COMMENT ON FUNCTION laya_row(jsonb, text, float8) IS 'True when the jsonb row satisfies the condition (one request per row).';
+COMMENT ON FUNCTION laya_row_prob(jsonb, text) IS 'Probability (0..1) that the jsonb row satisfies the condition.';
+COMMENT ON FUNCTION laya_watch(text, text, text, text) IS 'Arm a reaction: a trigger enqueues new/changed rows, laya_watch_tick runs action on the matches.';
+COMMENT ON FUNCTION laya_unwatch(text) IS 'Disarm a watch (drops its trigger when no watch on the relation remains).';
+COMMENT ON FUNCTION laya_watch_tick() IS 'Judge the queued rows of every watch and run the actions on the matches. Returns the number of actions run.';
+COMMENT ON FUNCTION laya_watches() IS 'The armed watches with their pending counts.';
+COMMENT ON FUNCTION laya_watch_queue() IS 'The queued rows waiting to be judged.';
+COMMENT ON FUNCTION laya_watch_skip(text) IS 'Abandon the pending rows of a watch. Returns how many were skipped.';

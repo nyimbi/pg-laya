@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`laya_watch` — react to new rows instead of scanning old ones.**
+  `SELECT laya_watch('tickets', 'the customer is threatening to leave', 'route_to_priority')` arms a rule:
+  a row trigger enqueues every new/changed row as `jsonb` (deduped by content, no model call in the write
+  path), and `SELECT laya_watch_tick();` — from pg_cron, a worker, or by hand — judges the queue with
+  `laya_row()` and runs `action(payload jsonb)` on every match. Judgments are cached, so a retried tick
+  re-judges nothing and only re-runs actions — **actions are at-least-once, make them idempotent** (one
+  failing action rolls the whole tick back). New helpers: `laya_row` / `laya_row_prob` (judge a `jsonb` row
+  you already have — one request per row, no read-ahead), `laya_watches()` (armed watches + pending
+  counts), `laya_watch_queue()` (rows waiting to be judged), `laya_unwatch(watch_id)` (disarm; drops the
+  trigger when the last watch on the table goes away), `laya_watch_skip(watch_id)` (abandon a watch's
+  pending rows). Regression-tested against the mock API (`05_watch`); see
+  [`examples/patterns/07-react-to-new-rows/`](examples/patterns/07-react-to-new-rows/).
 - **`laya.state_mode` — a `native` request format for the local Laya model.** The default `jev` mode packs
   `laya.batch_size` rows into one shared state (`{"condition", "rows"}`) — what the cloud Jev model is built
   for. The local model cannot reliably separate rows in a shared state (in a 4-row batch, rows with and
@@ -26,14 +38,14 @@ All notable changes to this project are documented here. The format follows
   (containers and CI have no service manager, so it prints how to start the server by hand instead). If a
   server already answers on the address and is not managed by us (the Ollaya desktop app, a manual
   `ollaya serve`), the installer leaves it running, pulls the model and exits.
-- **`examples/` — 26 fully-coded, runnable examples.** 12 business (escalate angry tickets, route by team,
+- **`examples/` — 27 fully-coded, runnable examples.** 12 business (escalate angry tickets, route by team,
   score leads, segment by persona, flag churn, rank applicants, categorize feedback, prioritize the queue,
   detect fraud signals, weekly sentiment, meeting outcomes, language routing), 8 personal (expenses, inbox,
-  photos, recipes, movie night, habits, moving, notes) and 6 patterns (picking a threshold, multi-label
+  photos, recipes, movie night, habits, moving, notes) and 7 patterns (picking a threshold, multi-label
   topics, human-in-the-loop, limiting what the model sees, managing costs on large tables, composing with
-  plain SQL). Each is a folder with a `README.md` and an `example.sql` that creates a small sample table,
-  seeds realistic rows and runs the query, so it works as-is:
-  `psql -d mydb -f examples/business/01-escalate-angry-tickets/example.sql`.
+  plain SQL, reacting to new rows with `laya_watch`). Each is a folder with a `README.md` and an
+  `example.sql` that creates a small sample table, seeds realistic rows and runs the query, so it works
+  as-is: `psql -d mydb -f examples/business/01-escalate-angry-tickets/example.sql`.
 - **`s/` — a self-contained static reference site.** The full documentation (install, functions, settings,
   how it works, query patterns, changelog, all examples) as plain HTML with no build step and no
   dependencies, a light/dark theme and SQL highlighting: open `s/index.html`.

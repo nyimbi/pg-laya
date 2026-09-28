@@ -39,6 +39,18 @@ SELECT id, round(laya_score(laya_smoke, 'how positive is this review?',
 FROM laya_smoke ORDER BY sentiment;
 
 \echo
+\echo '-- laya_watch(): arm a watch, enqueue a new row, tick it, disarm'
+CREATE TEMP TABLE laya_smoke_watched (id int, message text);
+CREATE FUNCTION laya_smoke_action(r jsonb) RETURNS void LANGUAGE sql AS
+  $$ SELECT 'queued: ' || (r->>'message') $$;
+SELECT laya_watch('laya_smoke_watched', 'the customer is threatening to leave', 'laya_smoke_action');
+INSERT INTO laya_smoke_watched VALUES (1, 'I am done with you, I am leaving.');
+SELECT laya_watch_tick() AS actions_run;
+SELECT * FROM laya_watches();
+SELECT laya_unwatch(watch_id) FROM laya_watch WHERE rel = 'laya_smoke_watched'::regclass;
+DROP FUNCTION laya_smoke_action;
+
+\echo
 \echo '-- laya_stats(): requests, tokens, estimated cost for this session'
 SELECT jsonb_pretty(laya_stats() - 'api_ms') AS stats;
 

@@ -1,0 +1,296 @@
+-- laya_watch: the trigger enqueues, the tick judges and acts. The mock scores 0.9 when the
+-- last word of the condition ('angry') appears in the row JSON, else 0.1.
+\set VERBOSITY terse
+SET laya.api_url = 'http://127.0.0.1:8765/v1/systemone';
+SET laya.api_key = 'test-key';
+SET laya.notices = off;
+CREATE TABLE w_tickets (id int PRIMARY KEY, note text);
+CREATE TABLE w_actions (ticket int);
+CREATE FUNCTION w_action(r jsonb) RETURNS void AS $$
+BEGIN INSERT INTO w_actions VALUES ((r->>'id')::int); END $$ LANGUAGE plpgsql;
+SELECT laya_watch('w_tickets', 'the customer is angry', 'w_action');
+ laya_watch 
+------------
+ w47a6e3d9
+(1 row)
+
+INSERT INTO w_tickets VALUES (1, 'angry about the charge'), (2, 'all is fine');
+SELECT watch_id, payload->>'id' AS id FROM laya_watch_queue() ORDER BY 2;
+ watch_id  | id 
+-----------+----
+ w47a6e3d9 | 1
+ w47a6e3d9 | 2
+(2 rows)
+
+SELECT laya_watch_tick();
+ laya_watch_tick 
+-----------------
+               1
+(1 row)
+
+SELECT * FROM w_actions ORDER BY 1;
+ ticket 
+--------
+      1
+(1 row)
+
+SELECT watch_id, pending FROM laya_watches();
+ watch_id  | pending 
+-----------+---------
+ w47a6e3d9 |       0
+(1 row)
+
+-- Content dedupe: the same content is not re-enqueued; a different row is.
+UPDATE w_tickets SET note = 'all is fine' WHERE id = 2;
+SELECT laya_watch_tick();
+ laya_watch_tick 
+-----------------
+               0
+(1 row)
+
+SELECT count(*) AS actions FROM w_actions;
+ actions 
+---------
+       1
+(1 row)
+
+INSERT INTO w_tickets VALUES (3, 'angry about the charge');
+SELECT laya_watch_tick();
+ laya_watch_tick 
+-----------------
+               1
+(1 row)
+
+SELECT * FROM w_actions ORDER BY 1;
+ ticket 
+--------
+      1
+      3
+(2 rows)
+
+-- Disarming: the watch and its trigger go, so nothing is enqueued any more.
+SELECT laya_unwatch(watch_id) FROM laya_watch WHERE rel = 'w_tickets'::regclass;
+ laya_unwatch 
+--------------
+ t
+(1 row)
+
+INSERT INTO w_tickets VALUES (4, 'angry');
+SELECT count(*) AS queued FROM laya_watch_queue();
+ queued 
+--------
+      0
+(1 row)
+
+SELECT count(*) AS watches FROM laya_watches();
+ watches 
+---------
+       0
+(1 row)
+
+-- Judging a row you already have.
+SELECT laya_row('{"id": 9, "note": "angry"}'::jsonb, 'the customer is angry');
+ laya_row 
+----------
+ t
+(1 row)
+
+SELECT laya_row('{"id": 10, "note": "calm"}'::jsonb, 'the customer is angry');
+ laya_row 
+----------
+ f
+(1 row)
+
+SELECT laya_row_prob('{"id": 9, "note": "angry"}'::jsonb, 'the customer is angry');
+ laya_row_prob 
+---------------
+           0.9
+(1 row)
+
+-- Validation: the relation must be a table, the action a jsonb function.
+SELECT laya_watch('no_such_table', 'the customer is angry', 'w_action');
+ERROR:  laya: no such relation no_such_table
+SELECT laya_watch('w_tickets', 'the customer is angry', 'no_such_action');
+ERROR:  laya: no function no_such_action taking one jsonb argument to run on matches
+CREATE VIEW w_view AS SELECT * FROM w_tickets;
+SELECT laya_watch('w_view', 'the customer is angry', 'w_action');
+ERROR:  laya: cannot watch w_view: only regular and partitioned tables
+-- Two watches on one table: a changed UPDATE re-enqueues; every watch is judged.
+CREATE FUNCTION w_action2(r jsonb) RETURNS void AS $$
+BEGIN INSERT INTO w_actions VALUES ((r->>'id')::int * 100); END $$ LANGUAGE plpgsql;
+SELECT laya_watch('w_tickets', 'the customer is angry', 'w_action2', 'second');
+ laya_watch 
+------------
+ second
+(1 row)
+
+UPDATE w_tickets SET note = 'angry about the new charge' WHERE id = 2;
+SELECT laya_watch_tick();
+ laya_watch_tick 
+-----------------
+               1
+(1 row)
+
+SELECT * FROM w_actions ORDER BY 1;
+ ticket 
+--------
+      1
+      3
+    200
+(3 rows)
+
+-- laya_watch_skip abandons one watch's pending rows.
+INSERT INTO w_tickets VALUES (5, 'angry again');
+SELECT laya_watch_skip('second');
+ laya_watch_skip 
+-----------------
+               1
+(1 row)
+
+SELECT laya_watch_tick();
+ laya_watch_tick 
+-----------------
+               0
+(1 row)
+
+SELECT * FROM w_actions ORDER BY 1;
+ ticket 
+--------
+      1
+      3
+    200
+(3 rows)
+
+-- A failing action rolls the whole tick back; the next tick retries.
+CREATE FUNCTION w_boom(r jsonb) RETURNS void AS $$
+BEGIN RAISE EXCEPTION 'boom'; END $$ LANGUAGE plpgsql;
+SELECT laya_watch('w_tickets', 'the customer is angry', 'w_boom', 'boom');
+ laya_watch 
+------------
+ boom
+(1 row)
+
+INSERT INTO w_tickets VALUES (6, 'angry once more');
+SELECT laya_watch_tick();
+ERROR:  boom
+SELECT laya_watch_skip('boom');
+ laya_watch_skip 
+-----------------
+               1
+(1 row)
+
+SELECT laya_watch_tick();
+ laya_watch_tick 
+-----------------
+               1
+(1 row)
+
+SELECT * FROM w_actions ORDER BY 1;
+ ticket 
+--------
+      1
+      3
+    200
+    600
+(4 rows)
+
+-- Re-arming with the same watch_id updates the watch in place.
+SELECT laya_watch('w_tickets', 'the customer is angry', 'w_action2', 'w47a6e3d9');
+ laya_watch 
+------------
+ w47a6e3d9
+(1 row)
+
+SELECT action FROM laya_watches() WHERE watch_id = 'w47a6e3d9';
+  action   
+-----------
+ w_action2
+(1 row)
+
+-- Disarming in stages: the trigger drops only when the last watch goes away.
+-- ('second', 'w47a6e3d9' and 'boom' are armed on w_tickets.)
+SELECT laya_unwatch('second');
+ laya_unwatch 
+--------------
+ t
+(1 row)
+
+SELECT count(*) AS trigger_alive FROM pg_trigger
+WHERE tgrelid = 'w_tickets'::regclass AND tgname = '_laya_watch_enqueue';
+ trigger_alive 
+---------------
+             1
+(1 row)
+
+SELECT laya_unwatch('w47a6e3d9');
+ laya_unwatch 
+--------------
+ t
+(1 row)
+
+SELECT count(*) AS trigger_alive FROM pg_trigger
+WHERE tgrelid = 'w_tickets'::regclass AND tgname = '_laya_watch_enqueue';
+ trigger_alive 
+---------------
+             1
+(1 row)
+
+INSERT INTO w_tickets VALUES (7, 'angry');
+SELECT count(*) AS queued FROM laya_watch_queue();
+ queued 
+--------
+      1
+(1 row)
+
+SELECT laya_unwatch('boom');
+ laya_unwatch 
+--------------
+ t
+(1 row)
+
+SELECT count(*) AS trigger_alive FROM pg_trigger
+WHERE tgrelid = 'w_tickets'::regclass AND tgname = '_laya_watch_enqueue';
+ trigger_alive 
+---------------
+             0
+(1 row)
+
+INSERT INTO w_tickets VALUES (8, 'angry');
+SELECT count(*) AS queued FROM laya_watch_queue();
+ queued 
+--------
+      0
+(1 row)
+
+-- A watch on a partitioned root catches rows inserted through a partition.
+CREATE TABLE w_parts (id int PRIMARY KEY, note text) PARTITION BY RANGE (id);
+CREATE TABLE w_parts_1 PARTITION OF w_parts FOR VALUES FROM (0) TO (100);
+SELECT laya_watch('w_parts', 'the customer is angry', 'w_action');
+ laya_watch 
+------------
+ wc71e56af
+(1 row)
+
+INSERT INTO w_parts VALUES (1, 'angry about the partition'), (2, 'all is fine');
+SELECT laya_watch_tick();
+ laya_watch_tick 
+-----------------
+               1
+(1 row)
+
+SELECT * FROM w_actions ORDER BY 1;
+ ticket 
+--------
+      1
+      1
+      3
+    200
+    600
+(5 rows)
+
+SELECT laya_unwatch(watch_id) FROM laya_watch WHERE rel = 'w_parts'::regclass;
+ laya_unwatch 
+--------------
+ t
+(1 row)
+

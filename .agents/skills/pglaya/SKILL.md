@@ -12,7 +12,8 @@ calibrated probabilities, not text — by default by a local model server on the
 [TypeSafe Jev](https://docs.typesafe.ai) model speaks the same `/v1/systemone` protocol and can be selected
 with `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`. No index, no embeddings, no vector column.
 The sibling functions return a probability (`laya_prob`), a class (`laya_choice`), a rubric score (`laya_score`)
-or the raw answer (`laya_eval`).
+or the raw answer (`laya_eval`). `laya_watch` goes beyond querying: a row trigger enqueues new/changed rows and
+a scheduled `laya_watch_tick()` runs your action on the ones that match.
 
 ```sql
 SELECT * FROM tickets WHERE status = 'open' AND laya(tickets, 'the customer threatens to cancel');
@@ -29,6 +30,7 @@ Source: https://github.com/realZachi/pg-laya.
 | --- | --- | --- |
 | to install or set up pglaya | follow **Install** below; run `scripts/check_server.sh` first | `references/install.md` |
 | a query ("rows where …", "rank by …", "sort tickets into teams") | follow **Write a query** below | `references/query-patterns.md`, `references/functions.md` |
+| to react to new rows ("when a matching row arrives, do X") | arm a watch: `laya_watch(rel, condition, action)` + a scheduled `laya_watch_tick()` (pg_cron or a worker) | `references/functions.md` (Reactions section) |
 | to know what laya can do / how it works / what it costs | follow **Explain** below | `references/how-it-works.md` |
 | to tune batching, timeouts, spend limits, model pin | look up the GUC | `references/settings.md` |
 | help with an error or unexpected result | **Troubleshoot** table below | `references/install.md` (troubleshooting section) |

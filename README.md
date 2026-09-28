@@ -44,7 +44,7 @@ joins, `GROUP BY`, `LIMIT`, `ORDER BY laya_prob(...)`.
 ## Docs & examples
 
 - [Documentation](https://pglaya.com/docs) — install, functions, settings, how it works, caveats.
-- [Examples](examples/) — 26 fully-coded, runnable `example.sql` files (12 business, 8 personal, 6
+- [Examples](examples/) — 27 fully-coded, runnable `example.sql` files (12 business, 8 personal, 7
   patterns). Each folder has a `README.md` explaining the scenario; run any of them with
   `psql -d mydb -f examples/business/01-escalate-angry-tickets/example.sql`.
 - [Reference site](https://nyimbi.github.io/pg-laya/) — the docs as a self-contained static site,
@@ -249,11 +249,27 @@ with `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';`.
 | `laya_choice(row, question, options text[])` | text | The most likely option for the row |
 | `laya_confidence(row, question, kind, options)` | float8 | Confidence of a `score`/`choice` answer |
 | `laya_eval(row, question, kind, options)` | jsonb | Full raw answer (probabilities, legend, confidence) |
+| `laya_row(row jsonb, condition [, threshold])` | boolean | Judge a row you already have as `jsonb` — one request per row, no read-ahead |
+| `laya_row_prob(row jsonb, condition)` | float8 | Same, the probability |
+| `laya_watch(rel, condition, action [, watch_id])` | text | Arm a reaction: a row trigger enqueues new/changed rows; the tick runs `action(payload jsonb)` on the matches |
+| `laya_watch_tick()` | int | Judge the queued rows of every watch, run the actions on the matches. Returns the number of actions run |
+| `laya_watches()` | table | The armed watches with their pending counts |
+| `laya_watch_queue()` | table | The queued rows waiting to be judged |
+| `laya_unwatch(watch_id)` | boolean | Disarm a watch (drops its trigger when no watch on the relation remains) |
+| `laya_watch_skip(watch_id)` | bigint | Abandon the pending rows of a watch (poison-pill escape hatch) |
 | `laya_stats()` | jsonb | Requests, tokens, rows evaluated, errors and retries, estimated cost, cache hits, in-flight requests and pooled connections for this session |
 | `laya_cache_clear()` | void | Forget cached judgments |
 | `laya_version()` | text | Extension version |
 
 `row` is the table alias itself (`laya(people, ...)`) or a subquery alias.
+
+### Reactions: `laya_watch`
+
+`laya_watch('tickets', 'the customer is threatening to leave', 'route_to_priority')` arms a rule:
+a row trigger enqueues every new/changed row (no model call in the write path), and
+`SELECT laya_watch_tick();` — from pg_cron, a worker, or by hand — judges the queue and runs your
+`action(payload jsonb)` on the matches. Actions run at-least-once, so make them idempotent.
+See [`examples/patterns/07-react-to-new-rows/`](examples/patterns/07-react-to-new-rows/).
 
 ## Settings
 

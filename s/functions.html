@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Functions — pg-laya</title>
-  <meta name="description" content="The pg-laya SQL functions: laya, laya_prob, laya_choice, laya_score, laya_confidence, laya_eval and session helpers.">
+  <meta name="description" content="The pg-laya SQL functions: laya, laya_prob, laya_choice, laya_score, laya_confidence, laya_eval, laya_watch and session helpers.">
   <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
   <link rel="stylesheet" href="assets/style.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
@@ -142,6 +142,39 @@ WHERE laya_confidence(t, 'which team?', 'choice', ARRAY['billing','technical','s
             </tbody>
           </table>
         </div>
+
+        <h2>Reactions: laya_watch</h2>
+        <p>React to <em>new</em> rows instead of scanning old ones. <code class="inline-code">laya_watch</code> arms a rule: a row
+        trigger enqueues every new/changed row (no model call in the write path), and <code class="inline-code">laya_watch_tick()</code> —
+        scheduled from pg_cron, a worker, or run by hand — judges the queue and runs your action on the matches.
+        Actions run <strong>at least once</strong>, so make them idempotent. See the
+        <a href="examples.html">React to new rows</a> example.</p>
+
+        <h3>laya_watch(rel, condition, action [, watch_id]) → text</h3>
+        <p>Arms a watch on a regular or partitioned table. <code class="inline-code">action</code> must be a
+        function taking one <code class="inline-code">jsonb</code> argument (the row). The default <code class="inline-code">watch_id</code>
+        is derived from relation + condition, so re-arming the same rule updates it in place. Creates the row trigger if needed.</p>
+        <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT laya_watch('tickets', 'the customer is threatening to leave or cancel', 'route_to_priority');</code></pre></div>
+
+        <h3>laya_watch_tick() → int</h3>
+        <p>Judges the queued rows of every watch (via <code class="inline-code">laya_row</code>) and runs the action on every match.
+        One failing action rolls the whole tick back; judgments are cached, so the next tick re-judges nothing and only
+        re-runs actions. Returns the number of actions run.</p>
+        <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>-- e.g. every minute via pg_cron
+SELECT cron.schedule('laya-tick', '* * * * *', 'SELECT laya_watch_tick()');</code></pre></div>
+
+        <h3>laya_row(row jsonb, condition [, threshold]) → boolean · laya_row_prob(row jsonb, condition) → float8</h3>
+        <p>Judge a row you already have as <code class="inline-code">jsonb</code>: one request per row, no read-ahead (nothing to
+        stream). This is what the tick calls under the hood; useful for judging rows assembled in SQL.</p>
+
+        <h3>laya_watches() → table · laya_watch_queue() → table · laya_watch_skip(watch_id) → bigint</h3>
+        <p>Inspect the machinery: <code class="inline-code">laya_watches()</code> lists the armed watches with their pending counts,
+        <code class="inline-code">laya_watch_queue()</code> the rows waiting to be judged, and
+        <code class="inline-code">laya_watch_skip</code> abandons a watch's pending rows (the poison-pill escape hatch).</p>
+
+        <h3>laya_unwatch(watch_id) → boolean</h3>
+        <p>Disarms a watch and deletes its queue. Drops the row trigger when the last watch on the table goes away.
+        Returns <code class="inline-code">false</code> when no such watch exists.</p>
 
         <h2>Session helpers</h2>
 

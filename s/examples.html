@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Examples — pg-laya</title>
-  <meta name="description" content="26 fully-coded, runnable pg-laya examples: 12 business, 8 personal, 6 patterns. Each is a complete SQL file you can run as-is.">
+  <meta name="description" content="27 fully-coded, runnable pg-laya examples: 12 business, 8 personal, 7 patterns. Each is a complete SQL file you can run as-is.">
   <script>(function(){try{var t=localStorage.getItem("pg-laya-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
   <link rel="stylesheet" href="assets/style.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
@@ -63,8 +63,8 @@
     <main class="content">
       <div class="doc">
         <h1>Examples</h1>
-        <p class="lead">26 fully-coded, runnable examples: <strong>12 business</strong>, <strong>8 personal</strong>,
-        <strong>6 patterns</strong>. Each is a complete <code class="inline-code">example.sql</code> — it creates a small
+        <p class="lead">27 fully-coded, runnable examples: <strong>12 business</strong>, <strong>8 personal</strong>,
+        <strong>7 patterns</strong>. Each is a complete <code class="inline-code">example.sql</code> — it creates a small
         sample table, seeds realistic rows, and runs the query. Swap in your own table to use it for real.</p>
 
         <div class="note info"><span class="ico">▶</span><div>
@@ -274,7 +274,7 @@ ORDER BY created_at;</code></pre></div>
           <p>Full file: <code class="inline-code">examples/personal/08-find-relevant-notes/example.sql</code></p></div>
         </div>
 
-        <h2>Patterns &amp; techniques <span class="rel-date">· 6</span></h2>
+        <h2>Patterns &amp; techniques <span class="rel-date">· 7</span></h2>
 
         <div class="ex-card">
           <div class="ex-head"><span class="num">01</span><span class="ttl">Pick a threshold</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
@@ -333,6 +333,15 @@ WHERE channel = 'email' AND created_at &gt;= now() - interval '7 days';</code></
 FROM tickets t
 JOIN customers c ON c.id = t.customer_id;</code></pre></div>
           <p>Full file: <code class="inline-code">examples/patterns/06-compose-with-plain-sql/example.sql</code></p></div>
+        </div>
+
+        <div class="ex-card">
+          <div class="ex-head"><span class="num">07</span><span class="ttl">React to new rows</span><span class="tag tech">pattern</span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>
+          <div class="ex-body"><p class="desc">Arm a watch: a trigger enqueues new/changed rows (no model call in the write path), a scheduled tick judges them and runs your action on the matches.</p>
+          <div class="code lang-sql"><div class="code-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> sql</div><pre><code>SELECT laya_watch('tickets', 'the customer is threatening to leave or cancel', 'route_to_priority');
+INSERT INTO tickets VALUES (7, 'Greta', 'Keep this up and I am cancelling tomorrow.');
+SELECT laya_watch_tick();  -- e.g. every minute via pg_cron</code></pre></div>
+          <p>Full file: <code class="inline-code">examples/patterns/07-react-to-new-rows/example.sql</code></p></div>
         </div>
 
         <p class="top-link"><a href="examples.html#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">Back to top ↑</a></p>

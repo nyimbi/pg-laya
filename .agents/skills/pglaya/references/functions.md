@@ -81,6 +81,49 @@ The raw answer. `kind` is `'noul'`, `'choice'` or `'score'`; `options` is requir
 
 Use it when you need the full probability vector (e.g. multi-label routing: every option above 0.3).
 
+## Reactions: laya_watch
+
+React to new rows instead of scanning old ones. `laya_watch` arms a rule: a row trigger enqueues every new/changed
+row (no model call in the write path), and `laya_watch_tick()` — scheduled from pg_cron, a worker, or run by hand —
+judges the queue and runs your action on the matches. **Actions run at least once** (a failing action rolls the
+tick back and the next tick retries it), so make them idempotent (`ON CONFLICT DO NOTHING`, upserts).
+
+### `laya_watch(rel text, condition text, action text, watch_id text DEFAULT NULL) → text`
+
+Arms a watch on a regular or partitioned table. `action` must be a function taking one `jsonb`
+argument (the row); schema-qualified names work. The default `watch_id` is derived from relation + condition, so
+re-arming the same rule updates it in place. Creates the row trigger if needed. Returns the `watch_id`.
+
+```sql
+SELECT laya_watch('tickets', 'the customer is threatening to leave or cancel', 'route_to_priority');
+```
+
+### `laya_watch_tick() → int`
+
+Judges the queued rows of every watch and runs the action on every match. One tick is atomic; judgments are
+cached, so a retried tick re-judges nothing. Returns the number of actions run.
+
+```sql
+-- pg_cron, every minute:
+SELECT cron.schedule('laya-tick', '* * * * *', 'SELECT laya_watch_tick()');
+```
+
+### `laya_row(row jsonb, condition text, threshold float8 DEFAULT NULL) → boolean`
+### `laya_row_prob(row jsonb, condition text) → float8`
+
+Judge a row you already have as `jsonb`: one request per row, no read-ahead. This is what the tick calls under
+the hood; useful for judging rows assembled in SQL.
+
+### `laya_watches() → table` · `laya_watch_queue() → table` · `laya_watch_skip(watch_id text) → bigint`
+
+Inspect the machinery: armed watches with pending counts, the rows waiting to be judged, and a way to abandon a
+watch's pending rows (the poison-pill escape hatch).
+
+### `laya_unwatch(watch_id text) → boolean`
+
+Disarms a watch and deletes its queue. Drops the row trigger when the last watch on the table goes away. Returns
+`false` when no such watch exists.
+
 ## Session helpers
 
 ### `laya_stats() → jsonb`
