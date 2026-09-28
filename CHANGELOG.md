@@ -26,6 +26,18 @@ All notable changes to this project are documented here. The format follows
   (containers and CI have no service manager, so it prints how to start the server by hand instead). If a
   server already answers on the address and is not managed by us (the Ollaya desktop app, a manual
   `ollaya serve`), the installer leaves it running, pulls the model and exits.
+- **`examples/` — 26 fully-coded, runnable examples.** 12 business (escalate angry tickets, route by team,
+  score leads, segment by persona, flag churn, rank applicants, categorize feedback, prioritize the queue,
+  detect fraud signals, weekly sentiment, meeting outcomes, language routing), 8 personal (expenses, inbox,
+  photos, recipes, movie night, habits, moving, notes) and 6 patterns (picking a threshold, multi-label
+  topics, human-in-the-loop, limiting what the model sees, managing costs on large tables, composing with
+  plain SQL). Each is a folder with a `README.md` and an `example.sql` that creates a small sample table,
+  seeds realistic rows and runs the query, so it works as-is:
+  `psql -d mydb -f examples/business/01-escalate-angry-tickets/example.sql`.
+- **`s/` — a self-contained static reference site.** The full documentation (install, functions, settings,
+  how it works, query patterns, changelog, all examples) as plain HTML with no build step and no
+  dependencies, a light/dark theme and SQL highlighting: open `s/index.html`.
+- A new README banner: a stylised rhino with the pg-laya wordmark (replaces the old vectorised title).
 
 ### Changed
 - **Default backend is now the local model server (Ollaya), pluggable to the cloud Jev model.** The default
