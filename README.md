@@ -114,7 +114,11 @@ The service preloads the model checkpoints at boot (`LAYA_PRELOAD=1`) so the fir
 model load. On its very first start it also downloads the checkpoints from Hugging Face into the local
 cache (the `english` checkpoint is ~421 MB), so the installer polls `/health` for up to 5 minutes and a
 slow first start is normal; afterwards boot takes seconds. Without `LAYA_MODELS` every bundled checkpoint
-is available, the others loading lazily on first use.
+is available, the others loading lazily on first use. For reproducible deployments the checkpoint is pinned by
+the `laya` package version the service runs (it resolves a fixed Hugging Face revision): pin it in the
+service's environment (`pip install 'laya[serve]==<version>'` in the service's venv, then
+`make install-serve LAYA_PYTHON=<that venv>/bin/python`). The `laya.model` GUC only changes the model name
+in the request, not the weights.
 
 Querying it works out of the box; for best accuracy use the state format the local model was
 trained on — one row per request, the row as the state, the condition in the question:
@@ -150,6 +154,21 @@ the service. If port 8000 is already taken by something else, install on another
 `LAYA_PORT=8001 make install-serve` — and point the extension at it
 (`SET laya.api_url = 'http://127.0.0.1:8001/v1/systemone';`); the installer prints that reminder whenever
 the port is not the default.
+
+#### Alternative runtime: Ollaya
+
+[Ollaya](https://ollaya.dev) (an independent project) also serves the Laya checkpoints, behind a
+TypeSafe-wire-identical `/v1` API on port 11435 — a drop-in `laya.api_url` target:
+
+```sql
+SET laya.api_url = 'http://127.0.0.1:11435/v1/systemone';
+SET laya.model = 'laya';   -- Ollaya's router (laya:en / laya:multilingual per request)
+```
+
+Same protocol, no key unless you set `OLLAYA_API_KEY`. One difference to know: `laya:en`'s context is
+512 tokens including the question, so a row that does not fit comes back as
+`laya: API error 422 … STATE_TRUNCATED` — use a view with fewer/narrower columns or
+`laya.max_chars_per_statement`.
 
 To query the cloud [TypeSafe Jev](https://docs.typesafe.ai) model instead,
 `SET laya.api_url = 'https://api.typesafe.ai/v1/systemone';` and set a TypeSafe API key (see below).
@@ -250,7 +269,7 @@ All settings are plain GUCs: `SET laya.<name> = ...`, `ALTER ROLE ... SET`, `ALT
 | `laya.concurrency` | `16` | Parallel API requests; up to twice that many are queued ahead of the executor. Keep this low (2-4) when using a local server: it runs one inference at a time, so more connections just queue or get HTTP 503 |
 | `laya.max_prefetch_rows` | `5000` | How far past a cache miss the read-ahead scans to find the requested row, and how many skipped rows it keeps for later requests (memory bound) |
 | `laya.notices` | `on` | Emit a progress `NOTICE` per finished request and a summary per table with request count, tokens, estimated cost and time |
-| `laya.api_url` | `http://127.0.0.1:8000/v1/systemone` | Endpoint. Laya's local server (default) speaks the same `/v1/systemone` protocol as the cloud [TypeSafe Jev](https://docs.typesafe.ai) model; point here for proxies, mocks, or the cloud model (`https://api.typesafe.ai/v1/systemone`) |
+| `laya.api_url` | `http://127.0.0.1:8000/v1/systemone` | Endpoint. Laya's local server (default) speaks the same `/v1/systemone` protocol as the cloud [TypeSafe Jev](https://docs.typesafe.ai) model; point here for proxies, mocks, [Ollaya](https://ollaya.dev) (`http://127.0.0.1:11435/v1/systemone` + `laya.model = 'laya'`), or the cloud model (`https://api.typesafe.ai/v1/systemone`) |
 | `laya.timeout` | `30` | Seconds per API request. Waits are interruptible: `statement_timeout` and cancel requests apply within 250 ms |
 | `laya.keepalive` | `600` | Seconds a pooled API connection may sit idle before it is reconnected. The first request on a fresh connection costs a TLS handshake plus, measured, up to 1.5 s of server-side setup, so keep connections alive across queries; TCP keepalive probes catch silently dropped ones |
 | `laya.max_rows_per_statement` | `0` (off) | Abort a statement that would send more rows than this to the API. Spend guard for shared deployments |
@@ -282,6 +301,39 @@ The model answers the question you wrote, literally. A few things that help (mor
   near 0.5.
 - Send only the columns the judgment needs: create a view with the relevant columns (and any pre-filter) and call
   `laya(view_alias, ...)` on the view. Views are read ahead and batched like tables.
+
+## Least privilege
+
+After `CREATE EXTENSION`, every function is executable by `PUBLIC`. On the default local server each call
+consumes the single shared inference CPU, so on a shared deployment restrict who may call them:
+
+```sql
+-- once, as a superuser: revoke the extension's functions from everyone, grant them to the app role
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT p.oid::regprocedure AS fn
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+           WHERE n.nspname = 'public' AND p.proname ~ '^_?laya'
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', r.fn);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO app_role', r.fn);
+  END LOOP;
+END
+$$;
+```
+
+For a narrower grant, give the role only the signatures it uses — but always include
+`_laya_eval(text, text, text, text, text)`, the internal function every wrapper calls:
+
+```sql
+GRANT EXECUTE ON FUNCTION _laya_eval(text, text, text, text, text),
+                           laya(anyelement, text, double precision),
+                           laya_prob(anyelement, text) TO app_role;
+```
+
+The spend guards (`laya.max_rows_per_statement` / `laya.max_chars_per_statement`) are the backstop for the
+roles that keep the grant.
 
 ## Caveats
 
